@@ -1,0 +1,110 @@
+-- -- Script para configurar la base de datos de Zona Garaje
+-- -- Ejecutar este script en tu consola de Neon Database
+
+-- -- Eliminar tablas si existen (para empezar limpio)
+-- DROP TABLE IF EXISTS reportes CASCADE;
+-- DROP TABLE IF EXISTS lealtad CASCADE;
+-- DROP TABLE IF EXISTS pagos CASCADE;
+-- DROP TABLE IF EXISTS servicios CASCADE;
+-- DROP TABLE IF EXISTS vehiculos CASCADE;
+-- DROP TABLE IF EXISTS clientes CASCADE;
+-- DROP TABLE IF EXISTS productos CASCADE;
+-- DROP TABLE IF EXISTS trabajadores CASCADE;
+
+-- -- Tabla de Clientes
+-- CREATE TABLE clientes (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   nombre TEXT NOT NULL,
+--   cedula TEXT NOT NULL,
+--   telefono TEXT,
+--   correo TEXT,
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Tabla de Vehículos
+-- CREATE TABLE vehiculos (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   cliente_id UUID REFERENCES clientes(id) ON DELETE CASCADE,
+--   marca TEXT NOT NULL,
+--   modelo TEXT NOT NULL,
+--   año INT,
+--   color TEXT,
+--   placa TEXT NOT NULL,
+--   km INT DEFAULT 0,
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Tabla de Servicios
+-- CREATE TABLE servicios (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   cliente_id UUID REFERENCES clientes(id) ON DELETE CASCADE,
+--   vehiculo_id UUID REFERENCES vehiculos(id) ON DELETE CASCADE,
+--   tipo_servicio TEXT NOT NULL,
+--   precio NUMERIC(10,2) DEFAULT 0,
+--   observaciones TEXT,
+--   fecha DATE DEFAULT CURRENT_DATE,
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Tabla de Productos (Inventario)
+-- CREATE TABLE productos (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   nombre TEXT NOT NULL,
+--   categoria TEXT DEFAULT 'General',
+--   precio_venta NUMERIC(10,2) DEFAULT 0,
+--   costo NUMERIC(10,2) DEFAULT 0,
+--   stock INT DEFAULT 0,
+--   stock_minimo INT DEFAULT 0,
+--   proveedor TEXT,
+--   servicio_asociado TEXT,
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Tabla de Trabajadores
+-- CREATE TABLE trabajadores (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   nombre TEXT NOT NULL,
+--   cargo TEXT DEFAULT 'Empleado',
+--   horario_inicio TIME DEFAULT '08:00',
+--   horario_salida TIME DEFAULT '17:00',
+--   estado TEXT DEFAULT 'Activo',
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Tabla de Pagos
+-- CREATE TABLE pagos (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   servicio_id UUID REFERENCES servicios(id) ON DELETE SET NULL,
+--   metodo_pago TEXT DEFAULT 'efectivo',
+--   monto NUMERIC(10,2) DEFAULT 0,
+--   estado TEXT DEFAULT 'completado',
+--   fecha DATE DEFAULT CURRENT_DATE,
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Tabla de Lealtad
+-- CREATE TABLE lealtad (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   cliente_id UUID REFERENCES clientes(id) ON DELETE CASCADE,
+--   puntos INT DEFAULT 0,
+--   canjes INT DEFAULT 0,
+--   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+--   UNIQUE(cliente_id)
+-- );
+
+-- -- Tabla de Reportes
+-- CREATE TABLE reportes (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   tipo TEXT NOT NULL,
+--   contenido JSONB,
+--   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );
+
+-- -- Índices para mejorar el rendimiento
+-- CREATE INDEX idx_vehiculos_cliente_id ON vehiculos(cliente_id);
+-- CREATE INDEX idx_servicios_cliente_id ON servicios(cliente_id);
+-- CREATE INDEX idx_servicios_vehiculo_id ON servicios(vehiculo_id);
+-- CREATE INDEX idx_pagos_servicio_id ON pagos(servicio_id);
+-- CREATE INDEX idx_lealtad_cliente_id ON lealtad(cliente_id);
+-- CREATE INDEX idx_servicios_fecha ON servicios(fecha);
+-- CREATE INDEX idx_pagos_fecha ON pagos(fecha);
