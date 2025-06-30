@@ -105,7 +105,7 @@ export default function Services() {
   // Mover las funciones dentro del componente para que tengan acceso a las variables de estado
   const calculateDetailedTotals = () => {
     // Calcular el precio base sumando todos los servicios seleccionados
-    const servicePrice = selectedServiceTypes.reduce((sum, service) => sum + (service.basePrice || 0), 0)
+const servicePrice = selectedServiceTypes.reduce((sum, service) => sum + (service.base_price || 0), 0)
     const productsSubtotal = selectedProductsSimple.reduce((sum, product) => sum + product.total, 0)
 
     let totalDiscounts = 0
@@ -163,6 +163,7 @@ export default function Services() {
 
   useEffect(() => {
     refreshServices()
+    
   }, [])
 
   useEffect(() => {
@@ -198,6 +199,8 @@ export default function Services() {
   refreshClients()
   refreshVehicles()
   refreshEmployees()
+    refreshServiceTypes() // <-- Agregado
+
 }, [])
 
   // NUEVO: Calcular total final con descuentos y extras
@@ -232,6 +235,20 @@ export default function Services() {
     setServices([])
   }
 }
+
+
+
+const refreshServiceTypes = async () => {
+  try {
+    const { data: serviceTypesData, error: serviceTypesError } = await supabase.from("tipos_servicio").select("*")
+      .eq("is_active", true)
+    if (serviceTypesError) throw serviceTypesError
+    setServiceTypes(serviceTypesData || [])
+  } catch (error) {
+    setServiceTypes([])
+  }
+}
+
 const refreshClients = async () => {
   try {
     const { data: clientsData, error: clientsError } = await supabase.from("clientes").select("*")
@@ -252,7 +269,10 @@ const refreshVehicles = async () => {
 }
 const refreshEmployees = async () => {
   try {
-    const { data: employeesData, error: employeesError } = await supabase.from("empleados").select("*")
+    const { data: employeesData, error: employeesError } = await supabase
+      .from("empleados")
+      .select("*")
+      .eq("estado", "activo")
     if (employeesError) throw employeesError
     setEmployees(employeesData || [])
   } catch (error) {
@@ -1007,83 +1027,55 @@ const refreshEmployees = async () => {
     setShowFullInvoiceView(true)
   }
 
-  const processPayment = async () => {
-    if (!selectedServiceForPayment) return
+ const processPayment = async () => {
+  if (!selectedServiceForPayment) return
 
-// Actualizar servicio como pagado en Supabase y registrar pago
-try {
-  // Registrar pago en Supabase
-  const { data: pagoInsertado, error: pagoError } = await supabase
-    .from("pagos")
-    .insert([
-      {
-        paymentId: selectedServiceForPayment.id,
-        type: "service",
-        clientName: clients.find((c) => c.id === selectedServiceForPayment.clientId)?.name || "Cliente no encontrado",
-        total: paymentData.finalTotal,
-        originalTotal: selectedServiceForPayment.total,
-        discount: paymentData.discountValue
-          ? paymentData.discountType === "percentage"
-            ? (selectedServiceForPayment.total * Number.parseFloat(paymentData.discountValue)) / 100
-            : Number.parseFloat(paymentData.discountValue)
-          : 0,
-        extraCharges: paymentData.extraCharges ? Number.parseFloat(paymentData.extraCharges) : 0,
-        extraChargesDescription: paymentData.extraChargesDescription,
-        paymentMethod: paymentData.paymentMethod,
-        cashierId: "admin",
-        createdAt: new Date().toISOString(),
-      },
-    ])
+  try {
+    // Registrar pago en Supabase
+    const { data: pagoInsertado, error: pagoError } = await supabase
+      .from("pagos")
+      .insert([
+        {
+          servicio_id: selectedServiceForPayment.id,
+          metodo_pago: paymentData.paymentMethod,
+          monto: paymentData.finalTotal,
+          estado: "completado",
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single()
 
-  if (pagoError) throw pagoError
+    if (pagoError) throw pagoError
 
-  // Actualizar servicio como pagado en Supabase
-  const { error: updateError } = await supabase.from("servicios").update({
-    status: "Finalizado",
-    paymentMethod: paymentData.paymentMethod,
-    finalTotal: paymentData.finalTotal,
-    extraCharges: paymentData.extraCharges,
-    extraChargesDescription: paymentData.extraChargesDescription,
-    paidAt: new Date().toISOString(),
-  }).eq("id", selectedServiceForPayment.id)
-  if (updateError) throw updateError
+    // Actualizar servicio como pagado en Supabase
+    const { error: updateError } = await supabase
+      .from("servicios")
+      .update({
+        pagado: true,
+        
+      })
+      .eq("id", selectedServiceForPayment.id)
 
-  // Preparar datos para factura
-  const serviceClient = clients.find((c) => c.id === selectedServiceForPayment.clientId)
-  const serviceVehicle = vehicles.find((v) => v.id === selectedServiceForPayment.vehicleId)
-  const serviceEmployee = employees.find((e) => e.id === selectedServiceForPayment.employeeId)
+    if (updateError) throw updateError
 
-  const fullInvoiceInfo = {
-    service: {
-      ...selectedServiceForPayment,
-      finalTotal: paymentData.finalTotal,
-      extraCharges: paymentData.extraCharges,
-      extraChargesDescription: paymentData.extraChargesDescription,
-    },
-    client: serviceClient,
-    vehicle: serviceVehicle || { plate: "N/A", make: "N/A", model: "N/A" },
-    employee: serviceEmployee || { name: "No asignado" },
+    setShowPaymentModal(false)
+    refreshServices()
+
+    toast({
+      title: "¡Pago procesado!",
+      description: `Pago de $${paymentData.finalTotal.toFixed(2)} registrado exitosamente`,
+      variant: "success",
+    })
+  } catch (error: any) {
+    console.error("Error processing payment:", error)
+    toast({
+      title: "Error",
+      description: error?.message || "Hubo un problema al procesar el pago",
+      variant: "destructive",
+    })
   }
-
-  setFullInvoiceData(fullInvoiceInfo)
-  setShowFullInvoiceView(true)
-  setShowPaymentModal(false)
-  refreshServices()
-
-  toast({
-    title: "¡Pago procesado!",
-    description: `Pago de $${paymentData.finalTotal.toFixed(2)} registrado exitosamente`,
-    variant: "success",
-  })
-} catch (error: any) {
-  console.error("Error processing payment:", error)
-  toast({
-    title: "Error",
-    description: error?.message || "Hubo un problema al procesar el pago",
-    variant: "destructive",
-  })
 }
-  }
 
   const saveEditedService = async () => {
     if (!selectedServiceForEdit) return
@@ -1477,116 +1469,71 @@ try {
     }
   }
 
-  const confirmService = async () => {
-    if (!selectedClient) {
-      toast({
-        title: "Error",
-        description: "Debe seleccionar un cliente",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (selectedServiceTypes.length === 0 && selectedProductsSimple.length === 0) {
-      toast({
-        title: "Error",
-        description: "Debe seleccionar al menos un servicio o agregar productos",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (selectedServiceTypes.length > 0 && !selectedEmployee) {
-      toast({
-        title: "Error",
-        description: "Debe asignar un empleado para el servicio",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      
-      const now = new Date()
-      const oneHourLater = new Date(now)
-      oneHourLater.setHours(oneHourLater.getHours() + 1)
-
-      const totals = calculateDetailedTotals()
-      const totalAmount = totals.total
-
-      const productsForStorage: ServiceProduct[] = []
-
-      for (const item of selectedProductsSimple) {
-        if (item.isPromotion && item.includedProducts) {
-          productsForStorage.push(...item.includedProducts)
-        } else {
-          productsForStorage.push(item)
-        }
-      }
-
-      // Crear un nombre combinado para múltiples servicios
-      const serviceTypeName =
-        selectedServiceTypes.length > 0 ? selectedServiceTypes.map((s) => s.name).join(" + ") : "Venta de Productos"
-
-      // Obtener los IDs de los servicios seleccionados
-      const serviceTypeIds =
-        selectedServiceTypes.length > 0 ? selectedServiceTypes.map((s) => s.id).join(",") : "product-only"
-
-      const serviceData = {
-        id: Date.now().toString(),
-        typeId: serviceTypeIds,
-        typeName: serviceTypeName,
-        clientId: selectedClient.id,
-        vehicleId: selectedVehicle?.id || null,
-        startTime: now.toISOString(),
-        endTime: selectedServiceTypes.length > 0 ? oneHourLater.toISOString() : now.toISOString(),
-        employeeId: selectedEmployee?.id || null,
-        basePrice: totals.serviceSubtotal,
-        additional: 0,
-        discount: totals.totalDiscounts,
-        total: totalAmount,
-        products: selectedProductsSimple,
-        notes: serviceNotes,
-        status: selectedServiceTypes.length > 0 ? "En proceso" : "Finalizado",
-        redemptionApplied: false,
-        createdAt: new Date().toISOString(),
-        selectedServices: selectedServiceTypes, // Guardar los servicios seleccionados para referencia
-      }
-
-  setServices((prev) => [...prev, serviceData])
-
-
-      // Actualizar el estado local de servicios para reflejar el cambio inmediatamente
-
-      const fullInvoiceInfo = {
-        service: serviceData,
-        client: selectedClient,
-        vehicle: selectedVehicle || { plate: "N/A", make: "N/A", model: "N/A" },
-        employee: selectedEmployee || { name: "Venta directa" },
-      }
-
-      setFullInvoiceData(fullInvoiceInfo)
-      setShowFullInvoiceView(true)
-      setLastCreatedService(serviceData)
-      setShowSuccessMessage(true)
-
-      toast({
-        title: selectedServiceTypes.length > 0 ? "¡Servicio registrado!" : "¡Venta registrada!",
-        description: `${selectedServiceTypes.length > 0 ? "Servicio" : "Venta"} para ${selectedClient.name} ${selectedServiceTypes.length > 0 ? "creado" : "procesada"} exitosamente`,
-        variant: "success",
-      })
-
-      toggleSimpleForm()
-      refreshServices()
-    } catch (error) {
-      console.error("Error creating service:", error)
-      toast({
-        title: "Error",
-        description: "Hubo un problema al registrar el servicio",
-        variant: "destructive",
-      })
-    }
+ const confirmService = async () => {
+  // Validación de campos requeridos
+  if (!selectedClient || !selectedVehicle || selectedServiceTypes.length === 0 || !selectedEmployee) {
+    toast({
+      title: "Faltan datos",
+      description: "Debe seleccionar cliente, vehículo, al menos un servicio y un empleado.",
+      variant: "destructive",
+    })
+    return
   }
+
+  // Preparar productos (si hay)
+  const productos = selectedProductsSimple.length > 0 ? selectedProductsSimple : null
+
+  // Calcular precio final (suma de servicios + productos)
+  const precioServicios = selectedServiceTypes.reduce((sum, s) => sum + (s.base_price || 0), 0)
+  const precioProductos = productos ? productos.reduce((sum, p) => sum + (p.total || 0), 0) : 0
+  const precio_final = precioServicios + precioProductos
+
+  // Preparar objeto para insertar
+  const nuevoServicio = {
+    cliente_id: selectedClient.id,
+    vehiculo_id: selectedVehicle.id,
+    tipo_id: selectedServiceTypes[0].id, // Si hay varios, guardar el primero (ajusta si tu tabla permite varios)
+    productos: productos ? JSON.stringify(productos) : null,
+    notas: serviceNotes || null,
+    precio_final,
+    descuento: 0, // Ajusta si tienes lógica de descuento
+    extra_charges: 0, // Ajusta si tienes lógica de cobros extra
+    extra_charges_description: null, // Ajusta si tienes lógica
+    pagado: false,
+    tipo_servicio: selectedServiceTypes.map((s) => s.name).join(", ") || null,
+    created_at: new Date().toISOString(),
+  }
+
+  // Guardar en Supabase
+  const { data, error } = await supabase
+    .from('servicios')
+    .insert([nuevoServicio])
+    .select()
+    .single()
+
+  if (error) {
+    toast({
+      title: "Error al guardar",
+      description: error.message,
+      variant: "destructive",
+    })
+    return
+  }
+
+  // Actualizar lista de servicios en el estado
+  setServices((prev: any[]) => [data, ...prev])
+  setShowSuccessMessage(true)
+  setLastCreatedService(data)
+  setShowSimpleForm(false)
+  // Limpiar selección
+  setSelectedClient(null)
+  setSelectedVehicle(null)
+  setSelectedServiceTypes([])
+  setSelectedEmployee(null)
+  setSelectedProductsSimple([])
+  setServiceNotes("")
+  setCurrentStep(1)
+}
 
   const getClientVehicles = () => {
     if (!selectedClient) return []
@@ -1971,7 +1918,7 @@ try {
             <div>
               <h3 className="font-medium text-green-800">¡Servicio creado exitosamente!</h3>
               <p className="text-green-600 text-sm">
-                Servicio #{lastCreatedService.id} - Total: ${lastCreatedService.total.toFixed(2)}
+Servicio #{lastCreatedService.id} - Total: ${(lastCreatedService.precio_final ?? 0).toFixed(2)}
               </p>
             </div>
             <button
@@ -2423,73 +2370,68 @@ try {
               )}
 
               {/* Step 3: Service Type Selection */}
-              {currentStep === 3 && (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold mb-2">
-                      3
-                    </div>
-                    <h4 className="text-lg font-medium">Seleccionar Servicios</h4>
-                    <p className="text-gray-600">Seleccione los servicios a realizar.</p>
-                  </div>
-                  <div className="space-y-2">
-                    {serviceTypes.map((serviceType) => (
-                      <div
-                        key={serviceType.id}
-                        onClick={() => selectServiceType(serviceType)}
-                        className={`p-3 border rounded-md cursor-pointer transition-colors ${
-                          selectedServiceTypes.some((selected) => selected.id === serviceType.id)
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-300 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div className="font-medium">{serviceType.name}</div>
-                          <div className="text-sm font-semibold">${serviceType.basePrice.toFixed(2)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {selectedServiceTypes.length > 0 && (
-                    <button
-                      onClick={() => setCurrentStep(4)}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md mt-4"
-                    >
-                      Continuar con {selectedServiceTypes.length} servicio{selectedServiceTypes.length > 1 ? "s" : ""}{" "}
-                      seleccionado{selectedServiceTypes.length > 1 ? "s" : ""}
-                    </button>
-                  )}
-                </div>
-              )}
+             {currentStep === 3 && (
+  <div className="space-y-4">
+    <div className="text-center">
+      <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold mb-2">
+        3
+      </div>
+      <h4 className="text-lg font-medium">Seleccionar Servicios</h4>
+      <p className="text-gray-600">Seleccione los servicios a realizar.</p>
+    </div>
+    <div className="space-y-2">
+      {serviceTypes.map((serviceType) => (
+        <div
+          key={serviceType.id}
+          onClick={() => selectServiceType(serviceType)}
+          className={`p-3 border rounded-md cursor-pointer transition-colors ${
+            selectedServiceTypes.some((selected) => selected.id === serviceType.id)
+              ? "border-blue-500 bg-blue-50"
+              : "border-gray-300 hover:bg-gray-50"
+          }`}
+        >
+          <div className="flex justify-between items-center">
+            <div className="font-medium">{serviceType.name}</div>
+            <div className="text-sm font-semibold">${serviceType.base_price.toFixed(2)}</div>
+          </div>
+          <div className="text-xs text-gray-500">{serviceType.description}</div>
+        </div>
+      ))}
+    </div>
+    {selectedServiceTypes.length > 0 && (
+      <button
+        onClick={() => setCurrentStep(4)}
+        className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md mt-4"
+      >
+        Continuar con {selectedServiceTypes.length} servicio{selectedServiceTypes.length > 1 ? "s" : ""} seleccionado{selectedServiceTypes.length > 1 ? "s" : ""}
+      </button>
+    )}
+  </div>
+)}
 
               {/* Step 4: Employee Selection */}
               {currentStep === 4 && (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold mb-2">
-                      4
-                    </div>
-                    <h4 className="text-lg font-medium">Asignar Empleado</h4>
-                    <p className="text-gray-600">Asigne un empleado para realizar el servicio.</p>
-                  </div>
-                  <div className="space-y-2">
-                    {employees.map((employee) => (
-                      <div
-                        key={employee.id}
-                        onClick={() => selectEmployee(employee)}
-                        className={`p-3 border rounded-md cursor-pointer transition-colors ${
-                          selectedEmployee?.id === employee.id
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-300 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="font-medium">{employee.name}</div>
-                        <div className="text-sm text-gray-500">{employee.role}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+  <div>
+    <h3>Asignar Empleado</h3>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {employees.length === 0 ? (
+        <div className="text-gray-500">No hay empleados activos disponibles.</div>
+      ) : (
+        employees.map((employee) => (
+          <button
+            key={employee.id}
+            className={`p-4 border rounded-lg ${selectedEmployee?.id === employee.id ? "bg-yellow-100" : "bg-white"}`}
+            onClick={() => selectEmployee(employee)}
+            type="button"
+          >
+            <div className="font-bold">{employee.nombre}</div>
+            <div className="text-xs text-gray-500">{employee.cargo}</div>
+          </button>
+        ))
+      )}
+    </div>
+  </div>
+)}
 
               {/* Step 5: Confirm Service */}
               {currentStep === 5 && (
@@ -2534,7 +2476,7 @@ try {
                         {selectedServiceTypes.map((service) => (
                           <li key={service.id} className="text-sm flex justify-between">
                             <span>{service.name}</span>
-                            <span>${service.basePrice.toFixed(2)}</span>
+<span>${(service.base_price ?? 0).toFixed(2)}</span>
                           </li>
                         ))}
                       </ul>
@@ -2654,65 +2596,65 @@ try {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {services.map((service) => {
-              const serviceClient = clients.find((c) => c.id === service.clientId)
-              const serviceVehicle = vehicles.find((v) => v.id === service.vehicleId)
+  const serviceClient = clients.find((c) => c.id === service.cliente_id)
+  const serviceVehicle = vehicles.find((v) => v.id === service.vehiculo_id)
+  const fecha = service.created_at ? new Date(service.created_at) : null
+  const total = service.precio_final ?? 0
 
-              return (
-                <div key={service.id} className="bg-white border rounded-lg p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="font-medium text-sm">#{service.id.slice(-8)}</div>
-                      <div className="text-sm text-gray-600">{serviceClient?.name || "Cliente no encontrado"}</div>
-                      <div className="text-xs text-gray-500">
-                        {serviceVehicle?.plate || "Sin vehículo"} - {service.typeName}
-                      </div>
-                      <div className="text-xs text-gray-500">
-{new Date(service.createdAt).toLocaleDateString()} - ${Number(service.total ?? 0).toFixed(2)}
-                      </div>
-                    </div>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        service.status === "Finalizado"
-                          ? "bg-green-100 text-green-800"
-                          : service.status === "En proceso"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-blue-100 text-blue-800"
-                      }`}
-                    >
-                      {service.status}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-3">
-                    {service.status !== "Finalizado" && (
-                      <button
-                        onClick={() => openPaymentModal(service)}
-                        className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs"
-                      >
-                        Pagar
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openEditModal(service)}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => openInternalInvoice(service)}
-                      className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-xs"
-                    >
-                      Factura
-                    </button>
-                    <button
-                      onClick={() => openClientReception(service)}
-                      className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs"
-                    >
-                      Hoja Cliente
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+  return (
+    <div key={service.id} className="bg-white border rounded-lg p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex-1">
+          <div className="font-medium text-sm">#{service.id?.slice(-8) ?? service.id}</div>
+          <div className="text-sm text-gray-600">{serviceClient?.name || "Cliente no encontrado"}</div>
+          <div className="text-xs text-gray-500">
+            {serviceVehicle?.plate || "Sin vehículo"} - {service.tipo_servicio || ""}
+          </div>
+          <div className="text-xs text-gray-500">
+            {fecha ? fecha.toLocaleDateString() : "Sin fecha"} - ${Number(total).toFixed(2)}
+          </div>
+        </div>
+        <span
+          className={`px-2 py-1 rounded text-xs font-medium ${
+            service.pagado
+              ? "bg-green-100 text-green-800"
+              : "bg-blue-100 text-blue-800"
+          }`}
+        >
+          {service.pagado ? "Pagado" : "Pendiente"}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        {!service.pagado && (
+          <button
+            onClick={() => openPaymentModal(service)}
+            className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs"
+          >
+            Pagar
+          </button>
+        )}
+        <button
+          onClick={() => openEditModal(service)}
+          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs"
+        >
+          Editar
+        </button>
+        <button
+          onClick={() => openInternalInvoice(service)}
+          className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-xs"
+        >
+          Factura
+        </button>
+        <button
+          onClick={() => openClientReception(service)}
+          className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-xs"
+        >
+          Hoja Cliente
+        </button>
+      </div>
+    </div>
+  )
+})}
           </div>
         </>
       )}
