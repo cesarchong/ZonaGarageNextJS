@@ -1,38 +1,46 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useToast } from "@/hooks/use-toast"
+import type { Pagos } from "@/interfaces/pagos.interface"
+import type { Productos } from "@/interfaces/productos.interface"
+import type { Promocion } from "@/interfaces/promociones.interface"
+import type { Servicios } from "@/interfaces/servicios.interface"
+import type { TipoServicio } from "@/interfaces/tipos-servicio.interface"
+import { addDocument, deleteDocument, getCollection, updateDocument } from "@/lib/firebase"
 import { formatCurrency } from "@/lib/utils"
+import { useEffect, useState } from "react"
 
-// Tipos de datos
-interface Product {
+// Tipos de datos para el análisis
+interface ProductSalesData {
   id: string
-  name: string
-  category: string
-  price: number
-  stock: number
-  cost: number
-  sold: number
-  revenue: number
+  nombre: string
+  categoria: string
+  precio_venta: number
+  cantidad_disponible: number
+  costo: number
+  cantidad_vendida: number
+  ingresos: number
 }
 
-interface Promotion {
-  id: string
-  name: string
-  products: string[]
-  discount: number
-  startDate: string
-  endDate: string
-  active: boolean
-  createdAt: string
+interface ProductionStats {
+  totalSold: number
+  totalRevenue: number
+  averagePrice: number
+  uniqueProducts: number
 }
 
 export default function BestSellers() {
   const { toast } = useToast()
-  const [products, setProducts] = useState<Product[]>([])
-  const [promotions, setPromotions] = useState<Promotion[]>([])
+  const [products, setProducts] = useState<ProductSalesData[]>([])
+  const [promotions, setPromotions] = useState<Promocion[]>([])
+  const [allProducts, setAllProducts] = useState<Productos[]>([])
+  const [servicios, setServicios] = useState<Servicios[]>([])
+  const [pagos, setPagos] = useState<Pagos[]>([])
+  const [loading, setLoading] = useState(true)
   const [timeFilter, setTimeFilter] = useState<string>("month")
   const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string }>({
     start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split("T")[0],
@@ -40,162 +48,222 @@ export default function BestSellers() {
   })
   const [showCustomDateFilter, setShowCustomDateFilter] = useState(false)
   const [showPromotionModal, setShowPromotionModal] = useState(false)
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [editingPromotion, setEditingPromotion] = useState<Promocion | null>(null)
   const [promotionData, setPromotionData] = useState({
     name: "",
-    discount: 10,
+    descripcion: "",
+    precio_promocional: 0,
     startDate: new Date().toISOString().split("T")[0],
     endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split("T")[0],
   })
+  const [selectedProducts, setSelectedProducts] = useState<{id: string, cantidad: number}[]>([])
+  const [selectedServices, setSelectedServices] = useState<{id: string, cantidad: number}[]>([])
+  const [allServices, setAllServices] = useState<TipoServicio[]>([])
+  const [productSearch, setProductSearch] = useState("")
+  const [serviceSearch, setServiceSearch] = useState("")
+  const [productQuantity, setProductQuantity] = useState(1)
+  const [serviceQuantity, setServiceQuantity] = useState(1) // Para cargar tipos de servicios disponibles
 
   // Cargar datos
   useEffect(() => {
-    loadRealSalesData()
+    loadData()
+    loadTiposServicios()
   }, [])
 
-  const loadRealSalesData = () => {
+  // Recargar datos cuando cambie el filtro de tiempo
+  useEffect(() => {
+    if (!loading) {
+      loadData()
+    }
+  }, [timeFilter, customDateRange])
+
+  const loadData = async () => {
     try {
-      // Cargar datos reales del localStorage
-      const servicesData = JSON.parse(localStorage.getItem("services") || "[]")
-      const inventoryData = JSON.parse(localStorage.getItem("inventory") || "[]")
-      const promotionsData = JSON.parse(localStorage.getItem("promotions") || "[]")
+      setLoading(true)
+      const [productosData, serviciosData, pagosData, promocionesData] = await Promise.all([
+        getCollection("productos") as Promise<Productos[]>,
+        getCollection("servicios") as Promise<Servicios[]>,
+        getCollection("pagos") as Promise<Pagos[]>,
+        getCollection("promociones") as Promise<Promocion[]>,
+      ])
 
-      // Procesar ventas reales para calcular productos vendidos
-      const productSalesMap = new Map()
+      setAllProducts(productosData)
+      
+      // Agregar el ID del documento Firebase a cada promoción
+      const promocionesConFirebaseId = (promocionesData as any[]).map(promo => ({
+        ...promo,
+        firebaseId: promo.id, // El ID que viene de getCollection es el ID del documento de Firebase
+        id: promo.id_interno || `promo-${Date.now()}` // Usar el ID interno o crear uno nuevo
+      }))
+      setPromotions(promocionesConFirebaseId as Promocion[])
+      
+      // Filtrar servicios por el rango de fechas seleccionado
+      const filteredServicios = filterServicesByDateRange(serviciosData)
+      setServicios(filteredServicios)
 
-      // Recorrer todos los servicios para extraer productos vendidos
-      servicesData.forEach((service: any) => {
-        if (service.products && service.products.length > 0) {
-          service.products.forEach((soldProduct: any) => {
-            // Si es una promoción, procesar los productos incluidos
-            if (soldProduct.isPromotion && soldProduct.includedProducts) {
-              soldProduct.includedProducts.forEach((includedProduct: any) => {
-                processProductSale(includedProduct, productSalesMap, inventoryData)
-              })
-            } else {
-              // Procesar producto normal
-              processProductSale(soldProduct, productSalesMap, inventoryData)
+      // Filtrar pagos por el rango de fechas seleccionado
+      const filteredPagos = pagosData.filter((pago) => {
+        const { start, end } = getDateRange()
+        const pagoDate = new Date(pago.fecha_pago)
+        return pagoDate >= start && pagoDate < end
+      })
+      setPagos(filteredPagos)
+
+      // Procesar datos de ventas para calcular productos más vendidos
+      const productSalesMap = new Map<string, ProductSalesData>()
+
+      // Procesar servicios filtrados por fecha
+      filteredServicios.forEach((servicio) => {
+        if (Array.isArray(servicio.productos) && servicio.productos.length > 0) {
+          servicio.productos.forEach((producto: any) => {
+            if (producto.id && !producto.id.startsWith("promo-")) {
+              processProductSale(producto, productSalesMap, productosData)
             }
           })
         }
       })
 
-      // Convertir Map a Array y filtrar productos que existen en inventario
-      const realProductsData = Array.from(productSalesMap.values())
-        .filter((product) => {
-          // Solo incluir productos que aún existen en el inventario
-          const inventoryProduct = inventoryData.find((p: any) => p.id === product.id)
-          return inventoryProduct !== undefined
-        })
-        .map((product) => {
-          // Actualizar stock actual del inventario
-          const inventoryProduct = inventoryData.find((p: any) => p.id === product.id)
-          return {
-            ...product,
-            stock: inventoryProduct ? inventoryProduct.quantity : 0,
-          }
-        })
+      // Procesar pagos directos filtrados por fecha - obtener productos desde servicios
+      filteredPagos.forEach((pago) => {
+        // Buscar el servicio asociado al pago para obtener los productos
+        const servicioAsociado = filteredServicios.find(s => s.id === pago.servicio_id)
+        if (servicioAsociado && Array.isArray(servicioAsociado.productos) && servicioAsociado.productos.length > 0) {
+          servicioAsociado.productos.forEach((producto: any) => {
+            if (producto.id && !producto.id.startsWith("promo-")) {
+              processProductSale(producto, productSalesMap, productosData)
+            }
+          })
+        }
+      })
 
-      setProducts(realProductsData)
-      setPromotions(promotionsData)
+      // Convertir Map a Array
+      const salesData = Array.from(productSalesMap.values())
+        .filter((product) => product.cantidad_vendida > 0)
+        .sort((a, b) => b.cantidad_vendida - a.cantidad_vendida)
 
-      console.log("Productos con ventas reales cargados:", realProductsData.length)
-      console.log("Total servicios procesados:", servicesData.length)
+      setProducts(salesData)
+      console.log("Datos cargados:", {
+        productos: productosData.length,
+        servicios: serviciosData.length,
+        pagos: pagosData.length,
+        promociones: promocionesData.length,
+        productosConVentas: salesData.length,
+      })
     } catch (error) {
-      console.error("Error loading real sales data:", error)
-      setProducts([])
-      setPromotions([])
+      console.error("Error loading data:", error)
+      toast({
+        title: "Error",
+        description: "Error al cargar los datos",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Cargar tipos de servicios disponibles
+  const loadTiposServicios = async () => {
+    try {
+      const tiposServiciosData = await getCollection('tipos_servicio')
+      // Filtrar solo servicios activos
+      const serviciosActivos = (tiposServiciosData as TipoServicio[]).filter(servicio => servicio.estado === true)
+      setAllServices(serviciosActivos)
+    } catch (error) {
+      console.error('Error loading tipos servicios:', error)
     }
   }
 
   // Función auxiliar para procesar cada producto vendido
-  const processProductSale = (soldProduct: any, productSalesMap: Map<string, any>, inventoryData: any[]) => {
-    const productId = soldProduct.productId
-    // Ignorar productos de promoción (que empiezan con "promo-")
-    if (productId.startsWith("promo-")) return
+  const processProductSale = (producto: any, productSalesMap: Map<string, ProductSalesData>, productosData: Productos[]) => {
+    const productId = producto.id || producto.producto_id
+    if (!productId) return
 
-    const quantity = soldProduct.quantity || 0
-    const revenue = soldProduct.total || 0
+    const cantidad = Number(producto.cantidad || producto.quantity || 1)
+    const precio = Number(producto.precio_venta || producto.price || 0)
+    const ingresos = precio * cantidad
 
     if (productSalesMap.has(productId)) {
-      const existing = productSalesMap.get(productId)
+      const existing = productSalesMap.get(productId)!
       productSalesMap.set(productId, {
         ...existing,
-        sold: existing.sold + quantity,
-        revenue: existing.revenue + revenue,
+        cantidad_vendida: existing.cantidad_vendida + cantidad,
+        ingresos: existing.ingresos + ingresos,
       })
     } else {
-      // Buscar información del producto en el inventario
-      const productInfo = inventoryData.find((p: any) => p.id === productId)
+      // Buscar información del producto en la base de datos
+      const productInfo = productosData.find((p) => p.id === productId)
       if (productInfo) {
         productSalesMap.set(productId, {
           id: productId,
-          name: productInfo.name,
-          category: productInfo.category,
-          price: productInfo.price,
-          cost: productInfo.cost || 0,
-          stock: productInfo.quantity || 0,
-          sold: quantity,
-          revenue: revenue,
+          nombre: productInfo.nombre,
+          categoria: productInfo.id_categoria,
+          precio_venta: productInfo.precio_venta,
+          costo: productInfo.costo,
+          cantidad_disponible: Number(productInfo.cantidad_disponible),
+          cantidad_vendida: cantidad,
+          ingresos: ingresos,
         })
       }
     }
   }
 
-  // Filtrar productos por período de tiempo
-  const getFilteredProducts = () => {
-    // Filtrar por período de tiempo si es necesario
-    // Para este ejemplo, devolvemos todos los productos con ventas reales
-    return products.filter((product) => product.sold > 0)
+  // Productos con ventas positivas (para mostrar en la lista principal)
+  const getProductsWithSales = () => {
+    return products.filter((product) => product.cantidad_vendida > 0)
   }
 
-  // Obtener productos más vendidos
-  const getBestSellingProducts = () => {
-    return getFilteredProducts()
-      .filter((product) => product.sold > 0) // Solo productos que se han vendido
-      .sort((a, b) => b.sold - a.sold) // Ordenar por cantidad vendida
-      .slice(0, 10)
-  }
-
-  // Obtener productos recomendados para promociones
+  // Productos recomendados (bajo stock pero con ventas)
   const getRecommendedProducts = () => {
-    const filtered = getFilteredProducts()
-
-    // Algoritmo: productos con buenas ventas, buen margen y stock suficiente
-    return filtered
-      .filter((product) => product.stock > 5 && product.sold > 0) // Stock suficiente y que se haya vendido
+    return allProducts
+      .filter((product) => {
+        const cantidad = parseInt(product.cantidad_disponible.toString())
+        return cantidad > 5 && cantidad > 0
+      })
       .sort((a, b) => {
-        // Puntuación basada en ventas y margen
-        const marginA = (a.price - a.cost) / a.price
-        const marginB = (b.price - b.cost) / b.price
-        const scoreA = a.sold * marginA
-        const scoreB = b.sold * marginB
-        return scoreB - scoreA
+        const aData = products.find(p => p.id === a.id)
+        const bData = products.find(p => p.id === b.id)
+        const aSold = aData?.cantidad_vendida || 0
+        const bSold = bData?.cantidad_vendida || 0
+        return bSold - aSold
       })
       .slice(0, 5)
   }
 
-  // Calcular estadísticas
-  const calculateStats = () => {
-    const filtered = getFilteredProducts()
-    const totalSold = filtered.reduce((sum, product) => sum + product.sold, 0)
-    const totalRevenue = filtered.reduce((sum, product) => sum + product.revenue, 0)
-    const averagePrice = totalSold > 0 ? totalRevenue / totalSold : 0
+  // Obtener estadísticas del período
+  const getProductionStats = (): ProductionStats => {
+    // Calcular ingresos totales de servicios y pagos filtrados por fecha
+    const serviciosIngresos = servicios.reduce((total, servicio) => {
+      const precio = typeof servicio.precio_total === 'string' 
+        ? parseFloat(servicio.precio_total) 
+        : (servicio.precio_total || 0)
+      return total + precio
+    }, 0)
+    
+    const pagosIngresos = pagos.reduce((total, pago) => {
+      return total + (pago.monto || 0)
+    }, 0)
+    
+    // Total de ingresos (servicios + pagos)
+    const totalRevenue = serviciosIngresos + pagosIngresos
+    
+    // Para productos vendidos, usar los datos procesados
+    const filtered = getProductsWithSales()
+    const totalSold = filtered.reduce((sum, product) => sum + product.cantidad_vendida, 0)
 
     return {
       totalSold,
       totalRevenue,
-      averagePrice,
+      averagePrice: totalRevenue / totalSold || 0,
       uniqueProducts: filtered.length,
     }
   }
 
-  // Crear nueva promoción
-  const createPromotion = () => {
-    if (selectedProducts.length === 0) {
+  // Crear o editar promoción
+  const createPromotion = async () => {
+    if (selectedProducts.length === 0 && selectedServices.length === 0) {
       toast({
         title: "Error",
-        description: "Selecciona al menos un producto para la promoción",
+        description: "Selecciona al menos un producto o servicio para la promoción",
         variant: "destructive",
       })
       return
@@ -210,60 +278,147 @@ export default function BestSellers() {
       return
     }
 
-    const newPromotion: Promotion = {
-      id: `promo-${Date.now()}`,
-      name: promotionData.name,
-      products: selectedProducts,
-      discount: promotionData.discount,
-      startDate: promotionData.startDate,
-      endDate: promotionData.endDate,
-      active: true,
-      createdAt: new Date().toISOString(),
+    if (promotionData.precio_promocional <= 0) {
+      toast({
+        title: "Error",
+        description: "El precio promocional debe ser mayor a 0",
+        variant: "destructive",
+      })
+      return
     }
 
-    const updatedPromotions = [...promotions, newPromotion]
-    setPromotions(updatedPromotions)
-    localStorage.setItem("promotions", JSON.stringify(updatedPromotions))
+    // Procesar productos seleccionados (sin aplicar descuentos, solo capturar información)
+    const productosPromocion = selectedProducts.map(producto => {
+      const { id, cantidad } = producto
+      const productoBase = allProducts.find(p => p.id === id)
+      if (!productoBase) return null
 
-    toast({
-      title: "Promoción creada",
-      description: `La promoción "${promotionData.name}" ha sido creada exitosamente`,
-    })
+      return {
+        id: productoBase.id,
+        nombre: productoBase.nombre,
+        precio_original: productoBase.precio_venta,
+        precio_promocion: productoBase.precio_venta, // Se mantiene el precio original, el descuento se aplica en el total
+        cantidad_disponible: productoBase.cantidad_disponible,
+        cantidad_promocion: cantidad,
+      }
+    }).filter((p): p is NonNullable<typeof p> => p !== null)
 
-    // Resetear formulario
-    setShowPromotionModal(false)
-    setSelectedProducts([])
-    setPromotionData({
-      name: "",
-      discount: 10,
-      startDate: new Date().toISOString().split("T")[0],
-      endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split("T")[0],
-    })
+    // Procesar servicios seleccionados (sin aplicar descuentos, solo capturar información)
+    const serviciosPromocion = selectedServices.map(service => {
+      const { id, cantidad } = service
+      const servicioBase = allServices.find(s => s.id === id)
+      if (!servicioBase) return null
+      
+      const precioBase = typeof servicioBase.precio_base === 'string' 
+        ? parseFloat(servicioBase.precio_base) 
+        : (servicioBase.precio_base || 0)
+
+      return {
+        id: servicioBase.id,
+        nombre: servicioBase.nombre,
+        precio_original: precioBase,
+        precio_promocion: precioBase, // Se mantiene el precio original, el descuento se aplica en el total
+        descripcion: servicioBase.descripcion || "",
+        cantidad_promocion: cantidad,
+      }
+    }).filter((s): s is NonNullable<typeof s> => s !== null)
+
+    // Calcular precio total original considerando las cantidades
+    const precioTotalOriginal = [
+      ...productosPromocion.map(p => p.precio_original * p.cantidad_promocion),
+      ...serviciosPromocion.map(s => s.precio_original * s.cantidad_promocion)
+    ].reduce((sum, precio) => sum + precio, 0)
+
+    const promotionToSave: any = {
+      id_interno: editingPromotion ? editingPromotion.id : `promo-${Date.now()}`, // ID interno para la lógica
+      nombre: promotionData.name,
+      descripcion: promotionData.descripcion,
+      productos: productosPromocion,
+      lista_servicios: serviciosPromocion,
+      precio_total_original: precioTotalOriginal,
+      precio_total_promocional: promotionData.precio_promocional,
+      fecha_inicio: promotionData.startDate,
+      fecha_fin: promotionData.endDate,
+      fecha_creacion: editingPromotion ? editingPromotion.fecha_creacion : new Date().toISOString(),
+      usos_realizados: editingPromotion ? editingPromotion.usos_realizados : 0,
+      activa: editingPromotion ? editingPromotion.activa : true,
+    }
+
+    try {
+      if (editingPromotion && editingPromotion.firebaseId) {
+        // Actualizar promoción existente usando el firebaseId
+        await updateDocument(`promociones/${editingPromotion.firebaseId}`, promotionToSave)
+        toast({
+          title: "Promoción actualizada",
+          description: `La promoción "${promotionData.name}" ha sido actualizada exitosamente`,
+        })
+      } else {
+        // Crear nueva promoción
+        await addDocument("promociones", promotionToSave)
+        toast({
+          title: "Promoción creada",
+          description: `La promoción "${promotionData.name}" ha sido creada exitosamente`,
+        })
+      }
+
+      await loadData() // Recargar datos
+      closePromotionModal() // Resetear formulario
+    } catch (error) {
+      console.error("Error saving promotion:", error)
+      toast({
+        title: "Error",
+        description: `Error al ${editingPromotion ? 'actualizar' : 'crear'} la promoción`,
+        variant: "destructive",
+      })
+    }
   }
 
   // Cambiar estado de promoción
-  const togglePromotionStatus = (id: string) => {
-    const updatedPromotions = promotions.map((promo) => (promo.id === id ? { ...promo, active: !promo.active } : promo))
-    setPromotions(updatedPromotions)
-    localStorage.setItem("promotions", JSON.stringify(updatedPromotions))
+  const togglePromotionStatus = async (id: string) => {
+    try {
+      const promotion = promotions.find((p) => p.id === id)
+      if (!promotion || !promotion.firebaseId) return
 
-    const promotion = updatedPromotions.find((p) => p.id === id)
-    toast({
-      title: promotion?.active ? "Promoción activada" : "Promoción desactivada",
-      description: `La promoción "${promotion?.name}" ha sido ${promotion?.active ? "activada" : "desactivada"}`,
-    })
+      const updatedPromotion = { ...promotion, activa: !promotion.activa }
+      
+      await updateDocument(`promociones/${promotion.firebaseId}`, updatedPromotion)
+      await loadData() // Recargar datos
+
+      toast({
+        title: updatedPromotion.activa ? "Promoción activada" : "Promoción desactivada",
+        description: `La promoción "${promotion.nombre}" ha sido ${updatedPromotion.activa ? "activada" : "desactivada"}`,
+      })
+    } catch (error) {
+      console.error("Error toggling promotion status:", error)
+      toast({
+        title: "Error",
+        description: "Error al cambiar el estado de la promoción",
+        variant: "destructive",
+      })
+    }
   }
 
   // Eliminar promoción
-  const deletePromotion = (id: string) => {
-    const updatedPromotions = promotions.filter((promo) => promo.id !== id)
-    setPromotions(updatedPromotions)
-    localStorage.setItem("promotions", JSON.stringify(updatedPromotions))
+  const deletePromotion = async (id: string) => {
+    try {
+      const promotion = promotions.find((p) => p.id === id)
+      if (!promotion || !promotion.firebaseId) return
 
-    toast({
-      title: "Promoción eliminada",
-      description: "La promoción ha sido eliminada exitosamente",
-    })
+      await deleteDocument(`promociones/${promotion.firebaseId}`)
+      await loadData() // Recargar datos
+
+      toast({
+        title: "Promoción eliminada",
+        description: "La promoción ha sido eliminada exitosamente",
+      })
+    } catch (error) {
+      console.error("Error deleting promotion:", error)
+      toast({
+        title: "Error",
+        description: "Error al eliminar la promoción",
+        variant: "destructive",
+      })
+    }
   }
 
   // Obtener el nombre del período actual
@@ -284,305 +439,370 @@ export default function BestSellers() {
     }
   }
 
-  // Obtener el color de la medalla según la posición
-  const getMedalColor = (index: number) => {
-    switch (index) {
-      case 0:
-        return "bg-yellow-400 text-black"
-      case 1:
-        return "bg-gray-300 text-black"
-      case 2:
-        return "bg-amber-600 text-white"
-      default:
-        return "bg-gray-200 text-gray-700"
+  // Funciones auxiliares para verificar si un producto está incluido en promoción
+  const isProductInPromotion = (productId: string) => {
+    return promotions.some((promo) => 
+      promo.activa && promo.productos.some(p => p.id === productId)
+    )
+  }
+
+  const getProductPromotion = (productId: string) => {
+    return promotions.find((promo) => 
+      promo.activa && promo.productos.some(p => p.id === productId)
+    )
+  }
+
+  const isServiceInPromotion = (serviceId: string) => {
+    return promotions.some((promo) => 
+      promo.activa && promo.lista_servicios.some(s => s.id === serviceId)
+    )
+  }
+
+  const getServicePromotion = (serviceId: string) => {
+    return promotions.find((promo) => 
+      promo.activa && promo.lista_servicios.some(s => s.id === serviceId)
+    )
+  }
+
+  // Obtener rango de fechas según el filtro seleccionado
+  const getDateRange = () => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+    switch (timeFilter) {
+      case "week":
+        const weekStart = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+        return { start: weekStart, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) }
+      
+      case "month":
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+        return { start: monthStart, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) }
+      
+      case "quarter":
+        const quarterMonth = Math.floor(now.getMonth() / 3) * 3
+        const quarterStart = new Date(now.getFullYear(), quarterMonth, 1)
+        return { start: quarterStart, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) }
+      
+      case "year":
+        const yearStart = new Date(now.getFullYear(), 0, 1)
+        return { start: yearStart, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) }
+      
+      case "custom":
+        return {
+          start: new Date(customDateRange.start),
+          end: new Date(new Date(customDateRange.end).getTime() + 24 * 60 * 60 * 1000)
+        }
+      
+      default: // "today"
+        return { start: today, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) }
     }
   }
 
-  // Obtener el ícono de la medalla según la posición
-  const getMedalIcon = (index: number) => {
-    switch (index) {
-      case 0:
-        return "fa-trophy"
-      case 1:
-        return "fa-medal"
-      case 2:
-        return "fa-award"
-      default:
-        return "fa-circle"
+  // Filtrar servicios por el rango de fechas seleccionado
+  const filterServicesByDateRange = (services: Servicios[]) => {
+    const { start, end } = getDateRange()
+    return services.filter((service) => {
+      const serviceDate = new Date(service.fecha_servicio)
+      return serviceDate >= start && serviceDate < end
+    })
+  }
+
+  // Funciones para manejar productos en promoción
+  const addProductToPromotion = (productId: string) => {
+    const product = allProducts.find(p => p.id === productId)
+    if (!product) return
+
+    const availableStock = parseInt(product.cantidad_disponible.toString())
+    if (availableStock < productQuantity) {
+      toast({
+        title: "Stock insuficiente",
+        description: `Solo hay ${availableStock} unidades disponibles de ${product.nombre}`,
+        variant: "destructive",
+      })
+      return
     }
-  }
 
-  // Función para refrescar datos cuando se detecten cambios en ventas
-  const refreshSalesData = () => {
-    loadRealSalesData()
-  }
-
-  // Escuchar eventos de cambios en ventas (opcional)
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "services" || e.key === "inventory") {
-        refreshSalesData()
+    const existingIndex = selectedProducts.findIndex(p => p.id === productId)
+    if (existingIndex >= 0) {
+      const newQuantity = selectedProducts[existingIndex].cantidad + productQuantity
+      if (newQuantity > availableStock) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${availableStock} unidades disponibles de ${product.nombre}`,
+          variant: "destructive",
+        })
+        return
       }
+      
+      const updatedProducts = [...selectedProducts]
+      updatedProducts[existingIndex].cantidad = newQuantity
+      setSelectedProducts(updatedProducts)
+    } else {
+      setSelectedProducts([...selectedProducts, { id: productId, cantidad: productQuantity }])
+    }
+    
+    setProductSearch("")
+    setProductQuantity(1)
+  }
+
+  const removeProductFromPromotion = (productId: string) => {
+    setSelectedProducts(selectedProducts.filter(p => p.id !== productId))
+  }
+
+  const updateProductQuantity = (productId: string, newQuantity: number) => {
+    const product = allProducts.find(p => p.id === productId)
+    if (!product) return
+
+    const availableStock = parseInt(product.cantidad_disponible.toString())
+    if (newQuantity > availableStock) {
+      toast({
+        title: "Stock insuficiente",
+        description: `Solo hay ${availableStock} unidades disponibles de ${product.nombre}`,
+        variant: "destructive",
+      })
+      return
     }
 
-    window.addEventListener("storage", handleStorageChange)
-    return () => window.removeEventListener("storage", handleStorageChange)
-  }, [])
+    if (newQuantity <= 0) {
+      removeProductFromPromotion(productId)
+      return
+    }
 
-  // Estadísticas calculadas
-  const stats = calculateStats()
-  const bestSellers = getBestSellingProducts()
+    const updatedProducts = selectedProducts.map(p => 
+      p.id === productId ? { ...p, cantidad: newQuantity } : p
+    )
+    setSelectedProducts(updatedProducts)
+  }
+
+  // Funciones para manejar servicios en promoción
+  const addServiceToPromotion = (serviceId: string) => {
+    const service = allServices.find(s => s.id === serviceId)
+    if (!service) return
+
+    const existingIndex = selectedServices.findIndex(s => s.id === serviceId)
+    if (existingIndex >= 0) {
+      const updatedServices = [...selectedServices]
+      updatedServices[existingIndex].cantidad += serviceQuantity
+      setSelectedServices(updatedServices)
+    } else {
+      setSelectedServices([...selectedServices, { id: serviceId, cantidad: serviceQuantity }])
+    }
+    
+    setServiceSearch("")
+    setServiceQuantity(1)
+  }
+
+  const removeServiceFromPromotion = (serviceId: string) => {
+    setSelectedServices(selectedServices.filter(s => s.id !== serviceId))
+  }
+
+  const updateServiceQuantity = (serviceId: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      removeServiceFromPromotion(serviceId)
+      return
+    }
+
+    const updatedServices = selectedServices.map(s => 
+      s.id === serviceId ? { ...s, cantidad: newQuantity } : s
+    )
+    setSelectedServices(updatedServices)
+  }
+
+  // Filtrar productos para el combobox
+  const getFilteredProducts = () => {
+    return allProducts.filter(product => 
+      product.nombre.toLowerCase().includes(productSearch.toLowerCase()) ||
+      product.id.toLowerCase().includes(productSearch.toLowerCase())
+    ).slice(0, 10)
+  }
+
+  // Filtrar servicios para el combobox
+  const getFilteredServices = () => {
+    return allServices.filter(service => 
+      service.nombre.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+      service.descripcion.toLowerCase().includes(serviceSearch.toLowerCase())
+    ).slice(0, 10)
+  }
+
+  // Función para abrir modal de edición
+  const openEditPromotionModal = (promotion: Promocion) => {
+    setEditingPromotion(promotion)
+    setPromotionData({
+      name: promotion.nombre,
+      descripcion: promotion.descripcion || "",
+      precio_promocional: promotion.precio_total_promocional || 0,
+      startDate: promotion.fecha_inicio ? promotion.fecha_inicio.split('T')[0] : new Date().toISOString().split("T")[0],
+      endDate: promotion.fecha_fin ? promotion.fecha_fin.split('T')[0] : new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split("T")[0],
+    })
+    
+    // Cargar productos y servicios seleccionados
+    const productosConCantidad = promotion.productos.map(p => ({
+      id: p.id,
+      cantidad: p.cantidad_promocion || 1
+    }))
+    setSelectedProducts(productosConCantidad)
+    
+    const serviciosConCantidad = promotion.lista_servicios.map(s => ({
+      id: s.id,
+      cantidad: s.cantidad_promocion || 1
+    }))
+    setSelectedServices(serviciosConCantidad)
+    
+    setShowPromotionModal(true)
+  }
+
+  // Función para cerrar modal y resetear datos
+  const closePromotionModal = () => {
+    setShowPromotionModal(false)
+    setEditingPromotion(null)
+    setSelectedProducts([])
+    setSelectedServices([])
+    setPromotionData({
+      name: "",
+      descripcion: "",
+      precio_promocional: 0,
+      startDate: new Date().toISOString().split("T")[0],
+      endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split("T")[0],
+    })
+    setProductSearch("")
+    setServiceSearch("")
+    setProductQuantity(1)
+    setServiceQuantity(1)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Cargando análisis de productos más vendidos...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const stats = getProductionStats()
+  const productsWithSales = getProductsWithSales()
   const recommendedProducts = getRecommendedProducts()
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      {/* Título y descripción */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Productos más vendidos</h1>
-        <p className="text-gray-600">Análisis de productos con mejor rendimiento y recomendaciones para promociones.</p>
-      </div>
-
-      {/* Tarjetas de estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Card className="p-4 border-l-4 border-blue-500">
-          <div className="flex items-center">
-            <div className="bg-blue-100 p-3 rounded-full mr-4">
-              <i className="fas fa-shopping-bag text-blue-500 text-xl"></i>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Productos vendidos</p>
-              <h3 className="text-2xl font-bold">{stats.totalSold}</h3>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 border-l-4 border-green-500">
-          <div className="flex items-center">
-            <div className="bg-green-100 p-3 rounded-full mr-4">
-              <i className="fas fa-dollar-sign text-green-500 text-xl"></i>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Ingresos totales</p>
-              <h3 className="text-2xl font-bold">{formatCurrency(stats.totalRevenue)}</h3>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 border-l-4 border-purple-500">
-          <div className="flex items-center">
-            <div className="bg-purple-100 p-3 rounded-full mr-4">
-              <i className="fas fa-tag text-purple-500 text-xl"></i>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Precio promedio</p>
-              <h3 className="text-2xl font-bold">{formatCurrency(stats.averagePrice)}</h3>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-4 border-l-4 border-yellow-500">
-          <div className="flex items-center">
-            <div className="bg-yellow-100 p-3 rounded-full mr-4">
-              <i className="fas fa-boxes text-yellow-500 text-xl"></i>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Productos únicos</p>
-              <h3 className="text-2xl font-bold">{stats.uniqueProducts}</h3>
-            </div>
-          </div>
-        </Card>
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Productos Más Vendidos</h1>
+        <p className="text-gray-600">Análisis de productos con mejor rendimiento en {getCurrentPeriodName()}</p>
       </div>
 
       {/* Filtros de tiempo */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <span className="text-gray-700 font-medium">Filtrar por:</span>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={timeFilter === "week" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setTimeFilter("week")
-              setShowCustomDateFilter(false)
-            }}
-          >
-            <i className="fas fa-calendar-week mr-2"></i>
-            Esta semana
-          </Button>
+      <Card className="p-6">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-gray-700">Período:</span>
+            <select
+              className="border rounded px-3 py-1 text-sm"
+              value={timeFilter}
+              onChange={(e) => {
+                setTimeFilter(e.target.value)
+                if (e.target.value !== "custom") {
+                  setShowCustomDateFilter(false)
+                  loadData()
+                }
+              }}
+            >
+              <option value="week">Esta semana</option>
+              <option value="month">Este mes</option>
+              <option value="quarter">Este trimestre</option>
+              <option value="year">Este año</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </div>
 
-          <Button
-            variant={timeFilter === "month" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setTimeFilter("month")
-              setShowCustomDateFilter(false)
-            }}
-          >
-            <i className="fas fa-calendar-alt mr-2"></i>
-            Este mes
-          </Button>
-
-          <Button
-            variant={timeFilter === "quarter" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setTimeFilter("quarter")
-              setShowCustomDateFilter(false)
-            }}
-          >
-            <i className="fas fa-calendar-alt mr-2"></i>
-            Este trimestre
-          </Button>
-
-          <Button
-            variant={timeFilter === "year" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setTimeFilter("year")
-              setShowCustomDateFilter(false)
-            }}
-          >
-            <i className="fas fa-calendar-alt mr-2"></i>
-            Este año
-          </Button>
-
-          <Button
-            variant={timeFilter === "custom" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setTimeFilter("custom")
-              setShowCustomDateFilter(!showCustomDateFilter)
-            }}
-          >
-            <i className="fas fa-calendar-alt mr-2"></i>
-            Personalizado
-          </Button>
-        </div>
-      </div>
-
-      {/* Selector de fechas personalizado */}
-      {showCustomDateFilter && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha inicial</label>
+          {timeFilter === "custom" && (
+            <div className="flex items-center space-x-2">
               <input
                 type="date"
-                className="w-full p-2 border rounded"
+                className="border rounded px-2 py-1 text-sm"
                 value={customDateRange.start}
                 onChange={(e) => setCustomDateRange({ ...customDateRange, start: e.target.value })}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha final</label>
+              <span className="text-sm">hasta</span>
               <input
                 type="date"
-                className="w-full p-2 border rounded"
+                className="border rounded px-2 py-1 text-sm"
                 value={customDateRange.end}
                 onChange={(e) => setCustomDateRange({ ...customDateRange, end: e.target.value })}
               />
+              <Button size="sm" onClick={loadData}>
+                Aplicar
+              </Button>
+            </div>
+          )}
+
+          <Button
+            onClick={() => {
+              closePromotionModal()
+              setShowPromotionModal(true)
+            }}
+            className="ml-auto bg-green-600 hover:bg-green-700"
+          >
+            <i className="fas fa-plus mr-2"></i>
+            Crear Promoción
+          </Button>
+        </div>
+      </Card>
+
+      {/* Estadísticas generales */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card className="p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <i className="fas fa-shopping-cart text-blue-600 text-xl"></i>
+            </div>
+            <div className="ml-4">
+              <p className="text-sm text-gray-500">Total Vendido</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalSold}</p>
             </div>
           </div>
-          <div className="mt-4 flex justify-end">
-            <Button onClick={() => setShowCustomDateFilter(false)} size="sm">
-              Aplicar filtro
-            </Button>
-          </div>
-        </div>
-      )}
+        </Card>
 
-      {/* Contenido principal en dos columnas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Columna izquierda: Ranking y gráfico */}
+        <Card className="p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <i className="fas fa-dollar-sign text-green-600 text-xl"></i>
+            </div>
+            <div className="ml-4">
+              <p className="text-sm text-gray-500">Ingresos</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <i className="fas fa-chart-line text-yellow-600 text-xl"></i>
+            </div>
+            <div className="ml-4">
+              <p className="text-sm text-gray-500">Precio Promedio</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.averagePrice)}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <i className="fas fa-box text-purple-600 text-xl"></i>
+            </div>
+            <div className="ml-4">
+              <p className="text-sm text-gray-500">Productos Únicos</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.uniqueProducts}</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <Card className="p-6 mb-8">
-            <h2 className="text-xl font-bold mb-4">
-              <i className="fas fa-trophy text-yellow-500 mr-2"></i>
-              Ranking de productos más vendidos {getCurrentPeriodName()}
-            </h2>
-
-            {/* Tabla de productos más vendidos */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="py-2 text-left">#</th>
-                    <th className="py-2 text-left">Producto</th>
-                    <th className="py-2 text-right">Unidades</th>
-                    <th className="py-2 text-right">Ingresos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bestSellers.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-gray-500">
-                        <div className="flex flex-col items-center">
-                          <i className="fas fa-chart-line text-4xl mb-2 text-gray-300"></i>
-                          <p className="text-lg font-semibold">No hay productos vendidos aún</p>
-                          <p className="text-sm">Los productos aparecerán aquí cuando se registren ventas</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    bestSellers.map((product, index) => (
-                      <tr key={product.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3">
-                          <span
-                            className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${getMedalColor(index)}`}
-                          >
-                            <i className={`fas ${getMedalIcon(index)}`}></i>
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          <div className="font-medium">{product.name}</div>
-                          <div className="text-xs text-gray-500">{product.category}</div>
-                        </td>
-                        <td className="py-3 text-right font-medium">{product.sold}</td>
-                        <td className="py-3 text-right font-medium">{formatCurrency(product.revenue)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* Gráfico de barras */}
-          <Card className="p-6">
-            <h2 className="text-xl font-bold mb-4">
-              <i className="fas fa-chart-bar text-blue-500 mr-2"></i>
-              Visualización de ventas
-            </h2>
-
-            <div className="space-y-4">
-              {bestSellers.slice(0, 6).map((product, index) => {
-                // Calcular el porcentaje para la barra
-                const maxRevenue = Math.max(...bestSellers.map((p) => p.revenue))
-                const percentage = (product.revenue / maxRevenue) * 100
-
-                return (
-                  <div key={product.id} className="relative">
-                    <div className="flex justify-between mb-1">
-                      <span className="font-medium text-sm">{product.name}</span>
-                      <span className="text-sm text-gray-500">{product.sold} unidades</span>
-                    </div>
-                    <div className="h-6 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${index === 0 ? "bg-gradient-to-r from-yellow-400 to-yellow-600" : "bg-gradient-to-r from-blue-400 to-blue-600"}`}
-                        style={{ width: `${percentage}%`, transition: "width 1s ease-in-out" }}
-                      ></div>
-                    </div>
-                    <span className="absolute right-2 top-7 text-xs font-bold text-white">
-                      {formatCurrency(product.revenue)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
-        </div>
-
-        {/* Columna derecha: Recomendaciones y promociones */}
-        <div>
           {/* Recomendaciones para promociones */}
           <Card className="p-6 mb-8">
             <h2 className="text-xl font-bold mb-4">
@@ -591,162 +811,128 @@ export default function BestSellers() {
             </h2>
 
             <div className="space-y-4">
-              {recommendedProducts.map((product) => (
-                <div key={product.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium">{product.name}</h3>
-                      <p className="text-sm text-gray-500">{product.category}</p>
-                    </div>
-                    {product.stock < 10 && (
-                      <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">
-                        Stock bajo: {product.stock}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-gray-500">Precio:</span>
-                      <span className="font-medium ml-1">{formatCurrency(product.price)}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Vendidos:</span>
-                      <span className="font-medium ml-1">{product.sold}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Margen:</span>
-                      <span className="font-medium ml-1">
-                        {Math.round(((product.price - product.cost) / product.price) * 100)}%
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Stock:</span>
-                      <span className="font-medium ml-1">{product.stock}</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex justify-end">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedProducts((prev) =>
-                          prev.includes(product.id) ? prev.filter((id) => id !== product.id) : [...prev, product.id],
-                        )
-                      }}
-                    >
-                      {selectedProducts.includes(product.id) ? (
-                        <>
-                          <i className="fas fa-check-circle text-green-500 mr-2"></i>
-                          Seleccionado
-                        </>
-                      ) : (
-                        <>
-                          <i className="fas fa-plus mr-2"></i>
-                          Seleccionar
-                        </>
+              {recommendedProducts.map((product) => {
+                const productSales = products.find(p => p.id === product.id)
+                return (
+                  <div key={product.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{product.nombre}</h3>
+                        <p className="text-sm text-gray-500">{product.id_categoria}</p>
+                      </div>
+                      {parseInt(product.cantidad_disponible.toString()) < 10 && (
+                        <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">
+                          Stock bajo: {product.cantidad_disponible}
+                        </span>
                       )}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    </div>
 
-            <div className="mt-6">
-              <Button
-                className="w-full"
-                onClick={() => setShowPromotionModal(true)}
-                disabled={selectedProducts.length === 0}
-              >
-                <i className="fas fa-tag mr-2"></i>
-                Crear promoción rápida
-                {selectedProducts.length > 0 && ` (${selectedProducts.length})`}
-              </Button>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-gray-500">Precio:</span>
+                        <span className="font-medium ml-1">{formatCurrency(product.precio_venta)}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Vendidos:</span>
+                        <span className="font-medium ml-1">{productSales?.cantidad_vendida || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Margen:</span>
+                        <span className="font-medium ml-1">
+                          {Math.round(((product.precio_venta - product.costo) / product.precio_venta) * 100)}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Stock:</span>
+                        <span className="font-medium ml-1">{product.cantidad_disponible}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const isSelected = selectedProducts.some(p => p.id === product.id)
+                          if (isSelected) {
+                            setSelectedProducts(prev => prev.filter(p => p.id !== product.id))
+                          } else {
+                            setSelectedProducts(prev => [...prev, { id: product.id, cantidad: 1 }])
+                          }
+                        }}
+                      >
+                        {selectedProducts.some(p => p.id === product.id) ? "Quitar" : "Agregar"}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </Card>
 
-          {/* Promociones activas */}
+          {/* Lista de productos más vendidos */}
           <Card className="p-6">
             <h2 className="text-xl font-bold mb-4">
-              <i className="fas fa-percentage text-purple-500 mr-2"></i>
-              Promociones activas
+              <i className="fas fa-trophy text-gold mr-2"></i>
+              Top Productos ({productsWithSales.length})
             </h2>
 
-            {promotions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <i className="fas fa-tag text-4xl mb-2"></i>
-                <p>No hay promociones activas</p>
-                <p className="text-sm">Crea una promoción para aumentar tus ventas</p>
+            {productsWithSales.length === 0 ? (
+              <div className="text-center py-8">
+                <i className="fas fa-chart-line text-gray-300 text-4xl mb-4"></i>
+                <p className="text-gray-500">No hay datos de ventas para mostrar en {getCurrentPeriodName()}</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {promotions.map((promo) => {
-                  // Obtener productos de la promoción
-                  const promoProducts = products.filter((p) => promo.products.includes(p.id))
+              <div className="space-y-3">
+                {productsWithSales.slice(0, 10).map((product, index) => {
+                  const isInPromotion = isProductInPromotion(product.id)
+                  const promotion = getProductPromotion(product.id)
 
                   return (
                     <div
-                      key={promo.id}
-                      className={`border rounded-lg p-4 ${promo.active ? "border-green-500" : "border-gray-300"}`}
+                      key={product.id}
+                      className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 ${
+                        isInPromotion ? "border-green-200 bg-green-50" : ""
+                      }`}
                     >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-medium">{promo.name}</h3>
-                          <p className="text-sm text-gray-500">
-                            {promo.discount}% de descuento • {promoProducts.length} productos
-                          </p>
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-shrink-0">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
+                              index === 0
+                                ? "bg-yellow-500"
+                                : index === 1
+                                ? "bg-gray-400"
+                                : index === 2
+                                ? "bg-orange-500"
+                                : "bg-blue-500"
+                            }`}
+                          >
+                            {index + 1}
+                          </div>
                         </div>
-                        <span
-                          className={`text-xs px-2 py-1 rounded ${promo.active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`}
-                        >
-                          {promo.active ? "Activa" : "Inactiva"}
-                        </span>
+
+                        <div className="flex-grow">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-medium text-gray-900">{product.nombre}</h3>
+                            {isInPromotion && (
+                              <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                PROMOCIÓN
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500">{product.categoria}</p>
+                          <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
+                            <span>Stock: {product.cantidad_disponible}</span>
+                            <span>Precio: {formatCurrency(product.precio_venta)}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="mt-2 text-sm">
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {promoProducts.slice(0, 3).map((product) => (
-                            <span key={product.id} className="bg-gray-100 px-2 py-1 rounded text-xs">
-                              {product.name}
-                            </span>
-                          ))}
-                          {promoProducts.length > 3 && (
-                            <span className="bg-gray-100 px-2 py-1 rounded text-xs">
-                              +{promoProducts.length - 3} más
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="text-gray-500">
-                          Válido: {new Date(promo.startDate).toLocaleDateString()} -{" "}
-                          {new Date(promo.endDate).toLocaleDateString()}
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex justify-end space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => togglePromotionStatus(promo.id)}>
-                          {promo.active ? (
-                            <>
-                              <i className="fas fa-pause mr-1"></i>
-                              Pausar
-                            </>
-                          ) : (
-                            <>
-                              <i className="fas fa-play mr-1"></i>
-                              Activar
-                            </>
-                          )}
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => deletePromotion(promo.id)}
-                        >
-                          <i className="fas fa-trash-alt"></i>
-                        </Button>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-gray-900">{product.cantidad_vendida}</p>
+                        <p className="text-sm text-gray-500">vendidos</p>
+                        <p className="text-sm font-medium text-green-600">{formatCurrency(product.ingresos)}</p>
                       </div>
                     </div>
                   )
@@ -755,105 +941,443 @@ export default function BestSellers() {
             )}
           </Card>
         </div>
+
+        {/* Panel lateral de promociones */}
+        <div>
+          <Card className="p-6">
+            <h2 className="text-xl font-bold mb-4">
+              <i className="fas fa-tags text-blue-500 mr-2"></i>
+              Promociones Activas ({promotions.filter((p) => p.activa).length})
+            </h2>
+
+            {promotions.filter((p) => p.activa).length === 0 ? (
+              <div className="text-center py-8">
+                <i className="fas fa-tags text-gray-300 text-3xl mb-4"></i>
+                <p className="text-gray-500 mb-4">No hay promociones activas</p>
+                <Button onClick={() => setShowPromotionModal(true)} size="sm">
+                  Crear primera promoción
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {promotions
+                  .filter((promo) => promo.activa)
+                  .map((promo) => {
+                    // Obtener productos y servicios de la promoción
+                    const promoProducts = promo.productos || []
+                    const promoServices = promo.lista_servicios || []
+                    const totalItems = promoProducts.length + promoServices.length
+
+                    return (
+                      <div
+                        key={promo.id}
+                        className="border rounded-lg p-4 border-green-200 bg-green-50"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-medium">{promo.nombre}</h3>
+                            <p className="text-sm text-gray-500">
+                              Precio promocional: {formatCurrency(promo.precio_total_promocional)} • {totalItems} productos/servicios
+                            </p>
+                          </div>
+                          <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                            Activa
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-sm">
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {/* Mostrar productos */}
+                            {promoProducts.slice(0, 2).map((product) => (
+                              <span key={product.id} className="bg-blue-100 px-2 py-1 rounded text-xs">
+                                📦 {product.nombre}
+                              </span>
+                            ))}
+                            {/* Mostrar servicios */}
+                            {promoServices.slice(0, 2).map((service) => (
+                              <span key={service.id} className="bg-green-100 px-2 py-1 rounded text-xs">
+                                🔧 {service.nombre}
+                              </span>
+                            ))}
+                            {totalItems > 4 && (
+                              <span className="bg-gray-100 px-2 py-1 rounded text-xs">
+                                +{totalItems - 4} más
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-gray-500">
+                            Válido: {promo.fecha_inicio ? new Date(promo.fecha_inicio).toLocaleDateString() : "N/A"} -{" "}
+                            {promo.fecha_fin ? new Date(promo.fecha_fin).toLocaleDateString() : "N/A"}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex justify-end space-x-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => openEditPromotionModal(promo)}
+                          >
+                            <i className="fas fa-edit mr-1"></i>
+                            Editar
+                          </Button>
+
+                          <Button variant="outline" size="sm" onClick={() => togglePromotionStatus(promo.id)}>
+                            <i className="fas fa-pause mr-1"></i>
+                            Pausar
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700"
+                            onClick={() => deletePromotion(promo.id)}
+                          >
+                            <i className="fas fa-trash-alt"></i>
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </Card>
+
+          {/* Promociones inactivas */}
+          {promotions.filter((p) => !p.activa).length > 0 && (
+            <Card className="p-6 mt-6">
+              <h2 className="text-lg font-bold mb-4 text-gray-600">
+                <i className="fas fa-pause text-gray-400 mr-2"></i>
+                Promociones Pausadas ({promotions.filter((p) => !p.activa).length})
+              </h2>
+
+              <div className="space-y-3">
+                {promotions
+                  .filter((promo) => !promo.activa)
+                  .map((promo) => (
+                    <div key={promo.id} className="border rounded-lg p-3 border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="font-medium text-gray-700">{promo.nombre}</h3>
+                          <p className="text-sm text-gray-500">
+                            Precio promocional: {formatCurrency(promo.precio_total_promocional)}
+                          </p>
+                        </div>
+                        <div className="flex space-x-1">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => openEditPromotionModal(promo)}
+                          >
+                            <i className="fas fa-edit"></i>
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => togglePromotionStatus(promo.id)}>
+                            <i className="fas fa-play"></i>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-500"
+                            onClick={() => deletePromotion(promo.id)}
+                          >
+                            <i className="fas fa-trash-alt"></i>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
 
-      {/* Modal para crear promoción */}
+      {/* Modal de crear promoción */}
       {showPromotionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-4">Crear nueva promoción</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">{editingPromotion ? "Editar" : "Crear Nueva"} Promoción</h2>
 
-              <div className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre de la promoción
+                </label>
+                <input
+                  type="text"
+                  className="w-full border rounded px-3 py-2"
+                  value={promotionData.name}
+                  onChange={(e) => setPromotionData({ ...promotionData, name: e.target.value })}
+                  placeholder="Ej: Descuento de verano"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Descripción (opcional)
+                </label>
+                <textarea
+                  className="w-full border rounded px-3 py-2"
+                  rows={3}
+                  value={promotionData.descripcion}
+                  onChange={(e) => setPromotionData({ ...promotionData, descripcion: e.target.value })}
+                  placeholder="Describe los detalles de la promoción..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Precio promocional ($)
+                </label>
+                <input
+                  type="number"
+                  className="w-full border rounded px-3 py-2"
+                  value={promotionData.precio_promocional}
+                  onChange={(e) => setPromotionData({ ...promotionData, precio_promocional: Number(e.target.value) })}
+                  min="0"
+                  step="0.01"
+                  placeholder="Ingresa el precio final de la promoción"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de la promoción</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha inicio</label>
                   <input
-                    type="text"
-                    className="w-full p-2 border rounded"
-                    placeholder="Ej: Oferta especial de verano"
-                    value={promotionData.name}
-                    onChange={(e) => setPromotionData({ ...promotionData, name: e.target.value })}
+                    type="date"
+                    className="w-full border rounded px-3 py-2"
+                    value={promotionData.startDate}
+                    onChange={(e) => setPromotionData({ ...promotionData, startDate: e.target.value })}
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Productos seleccionados ({selectedProducts.length})
-                  </label>
-                  <div className="border rounded p-3 max-h-32 overflow-y-auto">
-                    {selectedProducts.length === 0 ? (
-                      <p className="text-gray-500 text-sm">No hay productos seleccionados</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {selectedProducts.map((id) => {
-                          const product = products.find((p) => p.id === id)
-                          return product ? (
-                            <div key={id} className="bg-gray-100 px-2 py-1 rounded text-sm flex items-center">
-                              <span>{product.name}</span>
-                              <button
-                                className="ml-2 text-gray-500 hover:text-red-500"
-                                onClick={() => setSelectedProducts((prev) => prev.filter((pid) => pid !== id))}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha fin</label>
+                  <input
+                    type="date"
+                    className="w-full border rounded px-3 py-2"
+                    value={promotionData.endDate}
+                    onChange={(e) => setPromotionData({ ...promotionData, endDate: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Sección para agregar productos */}
+              <div>
+                <h3 className="text-lg font-medium mb-3">📦 Agregar Productos</h3>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="col-span-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          {productSearch || "Buscar producto..."}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-0">
+                        <Command>
+                          <CommandInput 
+                            placeholder="Buscar producto..." 
+                            value={productSearch}
+                            onValueChange={setProductSearch}
+                          />
+                          <CommandEmpty>No se encontraron productos.</CommandEmpty>
+                          <CommandGroup>
+                            {getFilteredProducts().map((product) => (
+                              <CommandItem
+                                key={product.id}
+                                value={product.id}
+                                onSelect={() => {
+                                  setProductSearch(product.nombre)
+                                }}
                               >
-                                <i className="fas fa-times"></i>
+                                <div className="flex justify-between w-full">
+                                  <span>{product.nombre}</span>
+                                  <span className="text-sm text-gray-500">
+                                    Stock: {product.cantidad_disponible}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      min="1"
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="Cantidad"
+                      value={productQuantity}
+                      onChange={(e) => setProductQuantity(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+                <Button 
+                  onClick={() => {
+                    const selectedProduct = allProducts.find(p => p.nombre === productSearch)
+                    if (selectedProduct) {
+                      addProductToPromotion(selectedProduct.id)
+                    }
+                  }}
+                  className="w-full mb-4"
+                  disabled={!productSearch || productQuantity <= 0}
+                >
+                  Agregar Producto
+                </Button>
+
+                {/* Lista de productos seleccionados */}
+                <div className="border rounded p-3 max-h-40 overflow-y-auto">
+                  {selectedProducts.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No hay productos seleccionados</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedProducts.map((producto) => {
+                        const productInfo = allProducts.find(p => p.id === producto.id)
+                        return productInfo ? (
+                          <div key={producto.id} className="bg-blue-50 px-3 py-2 rounded flex justify-between items-center">
+                            <div>
+                              <span className="font-medium">{productInfo.nombre}</span>
+                              <span className="text-sm text-gray-500 ml-2">
+                                x{producto.cantidad} | Stock: {productInfo.cantidad_disponible}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="number"
+                                min="1"
+                                max={parseInt(productInfo.cantidad_disponible.toString())}
+                                value={producto.cantidad}
+                                onChange={(e) => updateProductQuantity(producto.id, Number(e.target.value))}
+                                className="w-16 px-2 py-1 border rounded text-sm"
+                              />
+                              <button
+                                onClick={() => removeProductFromPromotion(producto.id)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <i className="fas fa-trash text-sm"></i>
                               </button>
                             </div>
-                          ) : null
-                        })}
-                      </div>
-                    )}
-                  </div>
+                          </div>
+                        ) : null
+                      })}
+                    </div>
+                  )}
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Porcentaje de descuento</label>
-                  <div className="flex items-center">
+              {/* Sección para agregar servicios */}
+              <div>
+                <h3 className="text-lg font-medium mb-3">🔧 Agregar Servicios</h3>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="col-span-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-start">
+                          {serviceSearch || "Buscar servicio..."}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-0">
+                        <Command>
+                          <CommandInput 
+                            placeholder="Buscar servicio..." 
+                            value={serviceSearch}
+                            onValueChange={setServiceSearch}
+                          />
+                          <CommandEmpty>No se encontraron servicios.</CommandEmpty>
+                          <CommandGroup>
+                            {getFilteredServices().map((service) => (
+                              <CommandItem
+                                key={service.id}
+                                value={service.id}
+                                onSelect={() => {
+                                  setServiceSearch(service.nombre)
+                                }}
+                              >
+                                <div className="flex justify-between w-full">
+                                  <span>{service.nombre}</span>
+                                  <span className="text-sm text-gray-500">
+                                    ${service.precio_base}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div>
                     <input
-                      type="range"
+                      type="number"
                       min="1"
-                      max="50"
-                      className="flex-1 mr-4"
-                      value={promotionData.discount}
-                      onChange={(e) =>
-                        setPromotionData({ ...promotionData, discount: Number.parseInt(e.target.value) })
-                      }
-                    />
-                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">
-                      {promotionData.discount}%
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de inicio</label>
-                    <input
-                      type="date"
-                      className="w-full p-2 border rounded"
-                      value={promotionData.startDate}
-                      onChange={(e) => setPromotionData({ ...promotionData, startDate: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de fin</label>
-                    <input
-                      type="date"
-                      className="w-full p-2 border rounded"
-                      value={promotionData.endDate}
-                      onChange={(e) => setPromotionData({ ...promotionData, endDate: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="Cantidad"
+                      value={serviceQuantity}
+                      onChange={(e) => setServiceQuantity(Number(e.target.value))}
                     />
                   </div>
                 </div>
-              </div>
+                <Button 
+                  onClick={() => {
+                    const selectedService = allServices.find(s => s.nombre === serviceSearch)
+                    if (selectedService) {
+                      addServiceToPromotion(selectedService.id)
+                    }
+                  }}
+                  className="w-full mb-4"
+                  disabled={!serviceSearch || serviceQuantity <= 0}
+                >
+                  Agregar Servicio
+                </Button>
 
-              <div className="mt-6 flex justify-end space-x-3">
-                <Button variant="outline" onClick={() => setShowPromotionModal(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={createPromotion} disabled={selectedProducts.length === 0 || !promotionData.name}>
-                  <i className="fas fa-save mr-2"></i>
-                  Crear promoción
-                </Button>
+                {/* Lista de servicios seleccionados */}
+                <div className="border rounded p-3 max-h-40 overflow-y-auto">
+                  {selectedServices.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No hay servicios seleccionados</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedServices.map((servicio) => {
+                        const serviceInfo = allServices.find(s => s.id === servicio.id)
+                        return serviceInfo ? (
+                          <div key={servicio.id} className="bg-green-50 px-3 py-2 rounded flex justify-between items-center">
+                            <div>
+                              <span className="font-medium">{serviceInfo.nombre}</span>
+                              <span className="text-sm text-gray-500 ml-2">
+                                x{servicio.cantidad} | ${serviceInfo.precio_base}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="number"
+                                min="1"
+                                value={servicio.cantidad}
+                                onChange={(e) => updateServiceQuantity(servicio.id, Number(e.target.value))}
+                                className="w-16 px-2 py-1 border rounded text-sm"
+                              />
+                              <button
+                                onClick={() => removeServiceFromPromotion(servicio.id)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <i className="fas fa-trash text-sm"></i>
+                              </button>
+                            </div>
+                          </div>
+                        ) : null
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <Button variant="outline" onClick={closePromotionModal}>
+                Cancelar
+              </Button>
+              <Button onClick={createPromotion} className="bg-green-600 hover:bg-green-700">
+                {editingPromotion ? "Actualizar Promoción" : "Crear Promoción"}
+              </Button>
             </div>
           </div>
         </div>

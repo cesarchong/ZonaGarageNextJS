@@ -3,11 +3,12 @@
 import AdminPanel from "@/components/admin-panel"
 import BestSellers from "@/components/best-sellers"
 import CashRegister from "@/components/cash-register"
+import Categories from "@/components/categories"
 import Clients from "@/components/clients"
 import Dashboard from "@/components/dashboard"
 import Employees from "@/components/employees"
 import Header from "@/components/header"
-import Inventory from "@/components/inventory"
+// import { Inventory } from "@/components/inventory"
 import Login from "@/components/login"
 import LoyaltySystem from "@/components/loyalty-system"
 import MobileLayout from "@/components/mobile-layout"
@@ -17,6 +18,8 @@ import Services from "@/components/services"
 import Sidebar from "@/components/sidebar"
 import { useEffect, useState } from "react"
 // Agregar el import del componente de debug
+import Inventory from "@/components/inventory"
+import Providers from "@/components/providers"
 import SyncDebug from "@/components/sync-debug"
 
 export default function Home() {
@@ -49,12 +52,15 @@ export default function Home() {
       const storedRole = localStorage.getItem("userRole")
       const userEmail = localStorage.getItem("userEmail")
 
-      // ASIGNACIÓN PERMANENTE: cesarchong@zonagaraje.com SIEMPRE es admin
+      // ASIGNACIÓN PERMANENTE: cesarchong@zonagaraje.com SIEMPRE es administrador
       if (userEmail === "cesarchong@zonagaraje.com") {
-        setUserRole("admin")
-        localStorage.setItem("userRole", "admin")
+        setUserRole("administrador")
+        localStorage.setItem("userRole", "administrador")
       } else if (storedRole) {
-        setUserRole(storedRole)
+        // Normalizar a minúsculas
+        const normalized = storedRole.toLowerCase();
+        setUserRole(normalized)
+        localStorage.setItem("userRole", normalized)
       } else {
         setUserRole("empleado")
         localStorage.setItem("userRole", "empleado")
@@ -99,7 +105,7 @@ export default function Home() {
     // Navegación
     const handleNavigate = (event: CustomEvent) => {
       const section = event.detail
-      if ((section === "reports" || section === "admin") && userRole !== "admin") {
+      if ((section === "reports" || section === "admin") && userRole !== "administrador") {
         setCurrentSection("dashboard")
         return
       }
@@ -113,12 +119,11 @@ export default function Home() {
 
   // Verificar acceso cuando cambia la sección
   useEffect(() => {
-    if ((currentSection === "reports" || currentSection === "admin") && userRole !== "admin") {
+    if ((currentSection === "reports" || currentSection === "admin") && userRole !== "administrador") {
       setCurrentSection("dashboard")
     }
   }, [currentSection, userRole])
 
-  const handleLogin = () => setIsAuthenticated(true)
   const handleLogout = () => {
     setIsAuthenticated(false)
     localStorage.removeItem("userRole")
@@ -127,7 +132,8 @@ export default function Home() {
   const toggleSidebar = () => setSidebarCollapsed(!sidebarCollapsed)
 
   const renderSection = () => {
-    if ((currentSection === "reports" || currentSection === "admin") && userRole !== "admin") {
+    // Acceso Denegado para reportes o admin si no es ADMINISTRADOR
+    if ((currentSection === "reports" || currentSection === "admin") && userRole !== "administrador") {
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center p-8 bg-white rounded-lg shadow-lg">
@@ -162,14 +168,18 @@ export default function Home() {
         return <BestSellers />
       case "employees":
         return <Employees />
+      case "categories":
+        return <Categories />
       case "reports":
-        return userRole === "admin" ? <Reports /> : <Dashboard />
+        return userRole === "administrador" ? <Reports /> : <Dashboard />
       case "cash-register":
         return <CashRegister />
       case "loyalty":
         return <LoyaltySystem />
       case "admin":
-        return userRole === "admin" ? <AdminPanel /> : <Dashboard />
+        return userRole === "administrador" ? <AdminPanel /> : <Dashboard />
+      case "providers":
+        return <Providers />
       default:
         return <Dashboard />
     }
@@ -194,7 +204,7 @@ export default function Home() {
   }
 
   // Login
-  if (!isAuthenticated) return <Login onLogin={handleLogin} />
+  if (!isAuthenticated) return <Login />
 
   // Mobile
   if (isMobile) {
@@ -210,9 +220,9 @@ export default function Home() {
     <div className="flex h-screen bg-gray-100">
       <Sidebar
         currentSection={currentSection}
-        setCurrentSection={setCurrentSection}
+        setCurrentSectionAction={setCurrentSection}
         collapsed={sidebarCollapsed}
-        toggleSidebar={toggleSidebar}
+        toggleSidebarAction={toggleSidebar}
         userRole={userRole}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -237,6 +247,7 @@ function getSectionTitle(section: string) {
     "cash-register": "Gestión de Caja",
     loyalty: "Sistema de Lealtad",
     admin: "Panel de Administración",
+    providers: "Gestión de Proveedores",
   }
   return titles[section] || ""
 }

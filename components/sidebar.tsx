@@ -1,19 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { useEffect, useState } from "react"
 
 export default function Sidebar({
   currentSection,
-  setCurrentSection,
+  setCurrentSectionAction,
   collapsed,
-  toggleSidebar,
+  toggleSidebarAction,
   userRole = "empleado", // Valor por defecto
 }: {
   currentSection: string
-  setCurrentSection: (section: string) => void
+  setCurrentSectionAction: (section: string) => void
   collapsed: boolean
-  toggleSidebar: () => void
+  toggleSidebarAction: () => void
   userRole?: string
 }) {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null)
@@ -27,12 +27,12 @@ export default function Sidebar({
   useEffect(() => {
     const hash = window.location.hash.replace("#", "")
     if (hash) {
-      setCurrentSection(hash)
+      setCurrentSectionAction(hash)
     }
-  }, [setCurrentSection])
+  }, [setCurrentSectionAction])
 
   const handleSectionClick = (section: string) => {
-    setCurrentSection(section)
+    setCurrentSectionAction(section)
     // Disparar un evento personalizado para la navegación
     const event = new CustomEvent("navigate", { detail: section })
     window.dispatchEvent(event)
@@ -54,11 +54,11 @@ export default function Sidebar({
           <i className="fas fa-car-side"></i>
         </div>
         {!collapsed && <h1 className="ml-3 font-bold text-xl">Zona Garaje</h1>}
-        <Button
+  <Button
           variant="ghost"
           size="sm"
           className={`ml-auto text-white hover:bg-gray-800 ${collapsed ? "mx-auto" : ""}`}
-          onClick={toggleSidebar}
+          onClick={toggleSidebarAction}
         >
           <i className={`fas ${collapsed ? "fa-chevron-right" : "fa-chevron-left"}`}></i>
         </Button>
@@ -69,7 +69,7 @@ export default function Sidebar({
         variant="ghost"
         size="sm"
         className="absolute -right-4 top-20 bg-black text-yellow-400 hover:bg-gray-800 rounded-full w-8 h-8 flex items-center justify-center shadow-lg border border-yellow-400 z-50"
-        onClick={toggleSidebar}
+        onClick={toggleSidebarAction}
         title={collapsed ? "Expandir menú" : "Colapsar menú"}
       >
         <i className={`fas ${collapsed ? "fa-chevron-right" : "fa-chevron-left"} text-xs`}></i>
@@ -193,8 +193,36 @@ export default function Sidebar({
               onClick={() => handleSectionClick("employees")}
               data-section="employees"
             >
-              <i className="fas fa-user-hard-hat"></i>
+              <i className="fas fa-user-gear"></i>
               {!collapsed && <span className="ml-3">Trabajadores</span>}
+            </button>
+          </li>
+
+          {/* Categorias */}
+          <li>
+            <button
+              className={`w-full flex items-center p-3 hover:bg-gray-800 ${
+                currentSection === "categories" ? "bg-yellow-600 text-white" : ""
+              } ${collapsed ? "justify-center" : ""}`}
+              onClick={() => handleSectionClick("categories")}
+              data-section="categories"
+            >
+              <i className="fas fa-layer-group"></i>
+              {!collapsed && <span className="ml-3">Categorias</span>}
+            </button>
+          </li>
+
+          {/* Proveedores */}
+          <li>
+            <button
+              className={`w-full flex items-center p-3 hover:bg-gray-800 ${
+                currentSection === "providers" ? "bg-yellow-600 text-white" : ""
+              } ${collapsed ? "justify-center" : ""}`}
+              onClick={() => handleSectionClick("providers")}
+              data-section="providers"
+            >
+              <i className="fas fa-truck"></i>
+              {!collapsed && <span className="ml-3">Proveedores</span>}
             </button>
           </li>
 
@@ -226,8 +254,8 @@ export default function Sidebar({
             </button>
           </li>
 
-          {/* Reportes - Solo visible para admin */}
-          {userRole === "admin" && (
+          {/* Reportes - Solo visible para Administrador */}
+          {userRole === "administrador" && (
             <li>
               <button
                 className={`w-full flex items-center p-3 hover:bg-gray-800 ${
@@ -242,8 +270,8 @@ export default function Sidebar({
             </li>
           )}
 
-          {/* Admin - Solo visible para admin */}
-          {userRole === "admin" && (
+          {/* Administración - Solo visible para Administrador */}
+          {userRole === "administrador" && (
             <li>
               <button
                 className={`w-full flex items-center p-3 hover:bg-gray-800 ${

@@ -13,7 +13,7 @@ interface ServiceReceiptProps {
   } | null;
 }
 
-export default function ServiceReceipt({ isOpen, onClose, receiptData }: ServiceReceiptProps) {
+export default function ServiceReceiptWithOutPrice({ isOpen, onClose, receiptData }: ServiceReceiptProps) {
   if (!isOpen || !receiptData) return null;
   const { service, client, vehicle, employee, pagos = [] } = receiptData;
 

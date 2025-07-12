@@ -2,13 +2,15 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { Trash2 } from "lucide-react"
+import { useEffect, useState } from "react"
 
 export default function Vehicles() {
-  const { addToast } = useToast()
+  const { toast } = useToast()
   const [vehicles, setVehicles] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -22,6 +24,13 @@ export default function Vehicles() {
   const [year, setYear] = useState("")
   const [color, setColor] = useState("")
   const [type, setType] = useState("")
+
+  // Loading state
+  const [loading, setLoading] = useState(false)
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null)
 
   useEffect(() => {
     refreshVehicles()
@@ -51,49 +60,52 @@ export default function Vehicles() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
+    setTimeout(() => {
+      const vehicleData = {
+        id: currentVehicle?.id || Date.now().toString(),
+        clientId,
+        plate: plate.toUpperCase(),
+        make,
+        model,
+        year: year || "",
+        color: color || "",
+        type,
+        createdAt: currentVehicle?.createdAt || new Date().toISOString(),
+      }
 
-    const vehicleData = {
-      id: currentVehicle?.id || Date.now().toString(),
-      clientId,
-      plate: plate.toUpperCase(),
-      make,
-      model,
-      year: year || "",
-      color: color || "",
-      type,
-      createdAt: currentVehicle?.createdAt || new Date().toISOString(),
-    }
+      // Get existing vehicles
+      const vehiclesData = JSON.parse(localStorage.getItem("vehicles") || "[]")
 
-    // Get existing vehicles
-    const vehiclesData = JSON.parse(localStorage.getItem("vehicles") || "[]")
-
-    if (currentVehicle) {
-      // Update existing vehicle
-      const index = vehiclesData.findIndex((v: any) => v.id === currentVehicle.id)
-      if (index !== -1) {
-        vehiclesData[index] = vehicleData
-        addToast({
-          title: "Actualizado",
-          description: "Vehículo actualizado exitosamente",
+      if (currentVehicle) {
+        // Update existing vehicle
+        const index = vehiclesData.findIndex((v: any) => v.id === currentVehicle.id)
+        if (index !== -1) {
+          vehiclesData[index] = vehicleData
+          toast({
+            title: "Actualizado",
+            description: "Vehículo actualizado exitosamente",
+            variant: "success",
+          })
+        }
+      } else {
+        // Add new vehicle
+        vehiclesData.push(vehicleData)
+        toast({
+          title: "Agregado",
+          description: "Vehículo agregado exitosamente",
           variant: "success",
         })
       }
-    } else {
-      // Add new vehicle
-      vehiclesData.push(vehicleData)
-      addToast({
-        title: "Agregado",
-        description: "Vehículo agregado exitosamente",
-        variant: "success",
-      })
-    }
 
-    // Save back to localStorage
-    localStorage.setItem("vehicles", JSON.stringify(vehiclesData))
+      // Save back to localStorage
+      localStorage.setItem("vehicles", JSON.stringify(vehiclesData))
 
-    // Reset form and refresh
-    toggleForm()
-    refreshVehicles()
+      // Reset form and refresh
+      toggleForm()
+      refreshVehicles()
+      setLoading(false)
+    }, 600)
   }
 
   const editVehicle = (vehicle: any) => {
@@ -108,33 +120,35 @@ export default function Vehicles() {
     setShowForm(true)
   }
 
-  const deleteVehicle = (id: string) => {
+  const handleDeleteVehicle = (id: string) => {
     // Check if vehicle has services
     const services = JSON.parse(localStorage.getItem("services") || "[]")
     const vehicleServices = services.filter((s: any) => s.vehicleId === id)
 
     if (vehicleServices.length > 0) {
-      addToast({
+      toast({
         title: "Error",
         description: "No se puede eliminar el vehículo porque tiene servicios registrados",
         variant: "destructive",
       })
+      setDeleteDialogOpen(false)
+      setDeleteVehicleId(null)
       return
     }
-
-    if (!confirm("¿Está seguro de eliminar este vehículo?")) return
 
     // Delete vehicle
     const vehiclesData = vehicles.filter((v) => v.id !== id)
     localStorage.setItem("vehicles", JSON.stringify(vehiclesData))
 
-    addToast({
+    toast({
       title: "Eliminado",
       description: "Vehículo eliminado exitosamente",
       variant: "success",
     })
 
     refreshVehicles()
+    setDeleteDialogOpen(false)
+    setDeleteVehicleId(null)
   }
 
   return (
@@ -173,7 +187,7 @@ export default function Vehicles() {
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="form-group">
                 <label htmlFor="vehicleClient" className="block mb-1">
-                  Cliente*
+                  Cliente
                 </label>
                 <select
                   id="vehicleClient"
@@ -193,7 +207,7 @@ export default function Vehicles() {
 
               <div className="form-group">
                 <label htmlFor="vehiclePlate" className="block mb-1">
-                  Placa*
+                  Placa
                 </label>
                 <input
                   type="text"
@@ -207,7 +221,7 @@ export default function Vehicles() {
 
               <div className="form-group">
                 <label htmlFor="vehicleMake" className="block mb-1">
-                  Marca*
+                  Marca
                 </label>
                 <input
                   type="text"
@@ -263,7 +277,7 @@ export default function Vehicles() {
 
               <div className="form-group">
                 <label htmlFor="vehicleType" className="block mb-1">
-                  Tipo*
+                  Tipo
                 </label>
                 <select
                   id="vehicleType"
@@ -283,9 +297,12 @@ export default function Vehicles() {
 
               <div className="form-group flex justify-between">
                 <div className="flex space-x-4">
-                  <Button type="submit" variant="yellow">
-                    <i className="fas fa-save mr-2"></i>
-                    {currentVehicle ? "Actualizar" : "Guardar"}
+                  <Button type="submit" variant="yellow" disabled={loading}>
+                    {loading ? (
+                      <span className="flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i>Guardando...</span>
+                    ) : (
+                      <><i className="fas fa-save mr-2"></i>{currentVehicle ? "Actualizar" : "Guardar"}</>
+                    )}
                   </Button>
                   <Button type="button" onClick={toggleForm} variant="outline">
                     <i className="fas fa-arrow-left mr-2"></i>Volver a la Lista
@@ -333,8 +350,8 @@ export default function Vehicles() {
                           <Button onClick={() => editVehicle(vehicle)} variant="yellow" size="sm" className="mr-1">
                             <i className="fas fa-edit mr-1"></i>Editar
                           </Button>
-                          <Button onClick={() => deleteVehicle(vehicle.id)} variant="destructive" size="sm">
-                            <i className="fas fa-trash mr-1"></i>Eliminar
+                          <Button onClick={() => { setDeleteVehicleId(vehicle.id); setDeleteDialogOpen(true) }} variant="destructive" size="sm">
+                            <Trash2 className="w-4 h-4" />Eliminar
                           </Button>
                         </td>
                       </tr>
@@ -351,6 +368,31 @@ export default function Vehicles() {
             </table>
           </div>
         </div>
+
+        {/* Dialog de confirmación de borrado */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>¿Estás seguro de eliminar este vehículo?</DialogTitle>
+              <DialogDescription>
+                Esta acción no se puede deshacer. El vehículo será eliminado permanentemente.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="destructive"
+                onClick={() => deleteVehicleId && handleDeleteVehicle(deleteVehicleId)}
+              >
+                Eliminar
+              </Button>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                  Cancelar
+                </Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Card>
     </div>
   )

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="512" viewBox="0 0 400 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="8" y="8" width="384" height="496" rx="16" fill="white" stroke="black" stroke-width="16"/>
+  <rect x="32" y="32" width="160" height="160" fill="black"/>
+  <rect x="208" y="32" width="160" height="160" fill="black"/>
+  <rect x="32" y="208" width="160" height="160" fill="black"/>
+  <rect x="208" y="208" width="160" height="160" fill="black"/>
+  <text x="60" y="140" font-family="Arial Black, Arial, sans-serif" font-size="120" fill="white">Z</text>
+  <text x="240" y="140" font-family="Arial Black, Arial, sans-serif" font-size="120" fill="white"> <tspan font-size="80" x="250" y="120">&#128295;</tspan></text>
+  <text x="60" y="320" font-family="Arial Black, Arial, sans-serif" font-size="120" fill="white">N</text>
+  <rect x="200" y="208" width="16" height="160" fill="#F9B233"/>
+  <rect x="352" y="208" width="16" height="160" fill="#F9B233"/>
+  <text x="60" y="480" font-family="Arial Black, Arial, sans-serif" font-size="80" fill="black">GARAJE</text>
+</svg>

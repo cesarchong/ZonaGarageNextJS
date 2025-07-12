@@ -56,16 +56,12 @@ export default function CashRegister() {
   const loadCashRegisterData = async () => {
     try {
       const cajas = await getCollection("cajas") as Caja[]
-      
-      // Buscar la caja más reciente que esté abierta
-      const activeCaja = cajas
-        .filter(caja => caja.esta_abierta === true)
-        .sort((a, b) => new Date(b.fecha_apertura).getTime() - new Date(a.fecha_apertura).getTime())[0]
+      const activeCaja = cajas.find(caja => caja.esta_abierta)
       
       if (activeCaja) {
         setCurrentCaja(activeCaja)
         setIsOpen(true)
-        setCashAmount(activeCaja.monto_efectivo || activeCaja.monto_inicial || 0)
+        setCashAmount(activeCaja.monto_efectivo)
       } else {
         setIsOpen(false)
         setCashAmount(0)
@@ -73,9 +69,6 @@ export default function CashRegister() {
       }
     } catch (error) {
       console.error("Error loading cash register data:", error)
-      setIsOpen(false)
-      setCashAmount(0)
-      setCurrentCaja(null)
       toast({
         title: "Error",
         description: "Error al cargar datos de la caja",
@@ -189,28 +182,36 @@ export default function CashRegister() {
       
       await addDocument("movimientos_caja", movementDoc)
       
-      // Actualizar el monto en caja solo si está abierta y no es un movimiento de cierre
-      if (currentCaja && isOpen && movement.tipo !== "cerrar") {
+      // Actualizar el monto en caja si está abierta
+      if (currentCaja && isOpen) {
         const newAmount = movement.tipo === "retiro" 
           ? cashAmount - movement.monto 
           : cashAmount + movement.monto
         
-        setCashAmount(Math.max(0, newAmount)) // Evitar montos negativos
+        setCashAmount(newAmount)
         
         const updatedCaja = {
           ...currentCaja,
-          monto_efectivo: Math.max(0, newAmount)
+          monto_efectivo: newAmount
         }
         
         await updateDocument(`cajas/${currentCaja.id}`, updatedCaja)
       }
       
       // Recargar movimientos
-      await loadRecentMovements()
+      loadRecentMovements()
       
+      toast({
+        title: "Éxito",
+        description: "Movimiento registrado correctamente",
+      })
     } catch (error) {
       console.error("Error adding movement:", error)
-      throw error // Re-lanzar el error para que sea manejado por la función que llama
+      toast({
+        title: "Error",
+        description: "Error al registrar movimiento",
+        variant: "destructive",
+      })
     }
   }
 
@@ -286,15 +287,11 @@ export default function CashRegister() {
         fecha_creacion: new Date().toISOString(),
       })
       
-      // Limpiar el estado local
       setIsOpen(false)
       setCashAmount(0)
       setCurrentCaja(null)
       setShowCloseForm(false)
       setFormData({ ...formData, finalAmount: "" })
-      
-      // Recargar datos para asegurar sincronización
-      await loadCashRegisterData()
       
       toast({
         title: "Éxito",
@@ -323,15 +320,6 @@ export default function CashRegister() {
       
       const amount = Number.parseFloat(formData.movementAmount)
       
-      if (amount <= 0) {
-        toast({
-          title: "Error",
-          description: "El monto debe ser mayor a 0",
-          variant: "destructive",
-        })
-        return
-      }
-      
       await addMovement({
         tipo: formData.movementType === "deposit" ? "deposito" : "retiro",
         monto: amount,
@@ -341,18 +329,11 @@ export default function CashRegister() {
         fecha_creacion: new Date().toISOString(),
       })
       
-      // Limpiar formulario y cerrar diálogo
+      setShowMovementForm(false)
       setFormData({
         ...formData,
         movementAmount: "",
         movementDescription: "",
-        movementType: "deposit"
-      })
-      setShowMovementForm(false)
-      
-      toast({
-        title: "Éxito",
-        description: `${formData.movementType === "deposit" ? "Depósito" : "Retiro"} registrado correctamente`,
       })
     } catch (error) {
       console.error("Error adding movement:", error)
@@ -426,74 +407,10 @@ export default function CashRegister() {
             </Dialog>
           ) : (
             <>
-              <Dialog open={showMovementForm} onOpenChange={setShowMovementForm}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <i className="fas fa-exchange-alt mr-2"></i>
-                    Movimiento
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center">
-                      <i className="fas fa-exchange-alt mr-2 text-blue-600"></i>
-                      Registrar Movimiento
-                    </DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                      <div className="flex items-center">
-                        <i className="fas fa-info-circle text-blue-600 mr-2"></i>
-                        <p className="text-sm text-blue-800">
-                          Registre depósitos o retiros de efectivo
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Tipo de movimiento</label>
-                      <select
-                        value={formData.movementType}
-                        onChange={(e) => setFormData({ ...formData, movementType: e.target.value as "deposit" | "withdrawal" })}
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="deposit">Depósito (+)</option>
-                        <option value="withdrawal">Retiro (-)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Monto</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={formData.movementAmount}
-                        onChange={(e) => setFormData({ ...formData, movementAmount: e.target.value })}
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0.00"
-                        autoFocus
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Descripción</label>
-                      <input
-                        type="text"
-                        value={formData.movementDescription}
-                        onChange={(e) => setFormData({ ...formData, movementDescription: e.target.value })}
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Descripción del movimiento"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-2">
-                      <Button onClick={handleMovement} className="bg-blue-600 hover:bg-blue-700 flex-1">
-                        <i className="fas fa-save mr-2"></i>
-                        Registrar
-                      </Button>
-                      <Button onClick={() => setShowMovementForm(false)} variant="outline">
-                        Cancelar
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <Button onClick={() => setShowMovementForm(true)} variant="outline">
+                <i className="fas fa-exchange-alt mr-2"></i>
+                Movimiento
+              </Button>
               <Dialog open={showCloseForm} onOpenChange={setShowCloseForm}>
                 <DialogTrigger asChild>
                   <Button className="bg-red-600 hover:bg-red-700">
@@ -668,35 +585,36 @@ export default function CashRegister() {
             <div className="space-y-3">
               {movements.map((movement) => (
                 <div key={movement.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center">                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
-                    movement.tipo === "abrir" ? "bg-green-100 text-green-600" :
-                    movement.tipo === "cerrar" ? "bg-red-100 text-red-600" :
-                    movement.tipo === "deposito" || movement.tipo === "pago" ? "bg-blue-100 text-blue-600" :
-                    "bg-orange-100 text-orange-600"
-                  }`}>
-                    <i className={`fas ${
-                      movement.tipo === "abrir" ? "fa-unlock" :
-                      movement.tipo === "cerrar" ? "fa-lock" :
-                      movement.tipo === "deposito" || movement.tipo === "pago" ? "fa-plus" :
-                      "fa-minus"
-                    }`}></i>
+                  <div className="flex items-center">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
+                      movement.tipo === "abrir" ? "bg-green-100 text-green-600" :
+                      movement.tipo === "cerrar" ? "bg-red-100 text-red-600" :
+                      movement.tipo === "deposito" || movement.tipo === "pago" ? "bg-blue-100 text-blue-600" :
+                      "bg-orange-100 text-orange-600"
+                    }`}>
+                      <i className={`fas ${
+                        movement.tipo === "abrir" ? "fa-unlock" :
+                        movement.tipo === "cerrar" ? "fa-lock" :
+                        movement.tipo === "deposito" || movement.tipo === "pago" ? "fa-plus" :
+                        "fa-minus"
+                      }`}></i>
+                    </div>
+                    <div>
+                      <p className="font-medium">{movement.descripcion}</p>
+                      <p className="text-sm text-gray-600">{formatDateTime(movement.fecha_hora)}</p>
+                      {movement.metodo_pago && (
+                        <p className="text-xs text-gray-500">Método: {movement.metodo_pago}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">{movement.descripcion}</p>
-                    <p className="text-sm text-gray-600">{formatDateTime(movement.fecha_hora)}</p>
-                    {movement.metodo_pago && (
-                      <p className="text-xs text-gray-500">Método: {movement.metodo_pago}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={`font-bold ${
-                    movement.tipo === "deposito" || movement.tipo === "pago" || movement.tipo === "abrir" 
-                      ? "text-green-600" 
-                      : "text-red-600"
-                  }`}>
-                    {movement.tipo === "retiro" ? "-" : "+"}{formatCurrency(movement.monto)}
-                  </p>
+                  <div className="text-right">
+                    <p className={`font-bold ${
+                      movement.tipo === "deposito" || movement.tipo === "pago" || movement.tipo === "abrir" 
+                        ? "text-green-600" 
+                        : "text-red-600"
+                    }`}>
+                      {movement.tipo === "retiro" ? "-" : "+"}{formatCurrency(movement.monto)}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -709,6 +627,59 @@ export default function CashRegister() {
           )}
         </CardContent>
       </Card>
+
+      {/* Forms */}
+      {showMovementForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Registrar Movimiento</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Tipo de movimiento</label>
+                <select
+                  value={formData.movementType}
+                  onChange={(e) => setFormData({ ...formData, movementType: e.target.value as "deposit" | "withdrawal" })}
+                  className="w-full p-2 border rounded-lg"
+                >
+                  <option value="deposit">Depósito</option>
+                  <option value="withdrawal">Retiro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Monto</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.movementAmount}
+                  onChange={(e) => setFormData({ ...formData, movementAmount: e.target.value })}
+                  className="w-full p-2 border rounded-lg"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Descripción</label>
+                <input
+                  type="text"
+                  value={formData.movementDescription}
+                  onChange={(e) => setFormData({ ...formData, movementDescription: e.target.value })}
+                  className="w-full p-2 border rounded-lg"
+                  placeholder="Descripción del movimiento"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleMovement} className="bg-blue-600 hover:bg-blue-700">
+                  Registrar Movimiento
+                </Button>
+                <Button onClick={() => setShowMovementForm(false)} variant="outline">
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

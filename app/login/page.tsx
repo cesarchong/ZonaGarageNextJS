@@ -5,37 +5,25 @@ import { getCollection, signIn } from "@/lib/firebase";
 import { showToast } from "nextjs-toast-notify";
 import React, { useState } from "react";
 
-
-
-export default function Login() {
-  // const { toast } = useToast()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-
+    e.preventDefault();
+    setIsLoading(true);
     try {
-      const userCredential = await signIn({ email, password })
-      // Buscar el documento del trabajador por email
+      const userCredential = await signIn({ email, password });
       const trabajadores = await getCollection("trabajadores");
       const trabajador = trabajadores.find((t: any) => t.email === email) as { rol?: string, check_in?: boolean } | undefined;
       if (trabajador) {
         if (trabajador.check_in) {
           localStorage.setItem("isAuthenticated", "true");
           localStorage.setItem("userEmail", email);
-          // Normalizar rol a minúsculas y mapear administradores a "admin"
-          const rawRole = trabajador.rol || "empleado";
-          // Mapear cualquier rol que contenga 'admin' a 'administrador' y guardar en minúsculas
-          const normalizedRole = rawRole.toLowerCase().includes("admin") ? "administrador" : rawRole.toLowerCase();
-          localStorage.setItem("userRole", normalizedRole);
+          localStorage.setItem("userRole", trabajador.rol || "empleado");
           localStorage.setItem("loginTime", new Date().toISOString());
-
-          // Guardar todos los datos del usuario en localStorage
           localStorage.setItem("userData", JSON.stringify(trabajador));
-
           showToast.success(`Inicio de sesión exitoso (${trabajador.rol || "empleado"})`);
           window.location.href = "/";
         } else {
@@ -45,18 +33,18 @@ export default function Login() {
         showToast.error("No se encontró el usuario en la base de datos de empleados.");
       }
     } catch (error: any) {
-      let msg = "Email o contraseña incorrectos"
+      let msg = "Email o contraseña incorrectos";
       if (error.code === "auth/user-not-found") {
-        msg = "El usuario no existe"
+        msg = "El usuario no existe";
       } else if (error.code === "auth/wrong-password") {
-        msg = "Contraseña incorrecta"
+        msg = "Contraseña incorrecta";
       } else if (error.code === "auth/too-many-requests") {
-        msg = "Demasiados intentos. Intenta más tarde."
+        msg = "Demasiados intentos. Intenta más tarde.";
       }
-      showToast.error(msg)
+      showToast.error(msg);
     }
-    setIsLoading(false)
-  }
+    setIsLoading(false);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -67,7 +55,6 @@ export default function Login() {
           backgroundImage: "url('/placeholder.svg?height=1080&width=1920')",
         }}
       ></div>
-
       <Card className="w-full max-w-md relative z-10 shadow-2xl">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
@@ -78,7 +65,6 @@ export default function Login() {
           <CardTitle className="text-2xl font-bold text-gray-800">Zona Garaje</CardTitle>
           <p className="text-gray-600">Sistema de Gestión</p>
         </CardHeader>
-
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -95,7 +81,6 @@ export default function Login() {
                 required
               />
             </div>
-
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
                 Contraseña
@@ -110,7 +95,6 @@ export default function Login() {
                 required
               />
             </div>
-
             <Button
               type="submit"
               className="w-full bg-black text-yellow-400 hover:bg-gray-800 py-3"
@@ -129,12 +113,11 @@ export default function Login() {
               )}
             </Button>
           </form>
-
           <div className="mt-6 text-center">
             <p className="text-xs text-gray-500">© 2023 Zona Garaje. Autolavado & Accesorios</p>
           </div>
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

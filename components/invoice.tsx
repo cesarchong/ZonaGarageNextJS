@@ -1,18 +1,19 @@
 "use client"
 
-import { useEffect, useRef } from "react"
-import React from "react"
+import { useEffect, useRef } from "react";
+
 
 interface InvoiceProps {
-  service: any
-  client: any
-  vehicle: any
-  employee: any
-  onClose: () => void
-  autoPrint?: boolean
+  service: any;
+  client: any;
+  vehicle: any;
+  pagos: any[];
+  employee?: any;
+  onClose: () => void;
+  autoPrint?: boolean;
 }
 
-export default function Invoice({ service, client, vehicle, employee, onClose, autoPrint = false }: InvoiceProps) {
+export default function Invoice({ service, client, vehicle, pagos, employee, onClose, autoPrint = false }: InvoiceProps) {
   const invoiceContentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -270,70 +271,134 @@ export default function Invoice({ service, client, vehicle, employee, onClose, a
           </div>
         </div>
 
+
         {/* Tabla de servicios */}
         <div className="services-section">
-          <h3>SERVICIOS Y PRODUCTOS</h3>
+          <h3>SERVICIOS, PRODUCTOS Y PROMOCIONES</h3>
           <table>
             <thead>
               <tr>
-                <th>Descripcion</th>
+                <th>Descripción</th>
                 <th>Cant.</th>
                 <th>Precio</th>
                 <th>Total</th>
               </tr>
             </thead>
             <tbody>
-              {/* Servicio principal */}
-              {service.basePrice > 0 && (
-                <tr>
-                  <td>{service.typeName || "Servicio general"}</td>
+              {/* Servicios realizados */}
+              {service.tipos_servicio_realizados && service.tipos_servicio_realizados.length > 0 && service.tipos_servicio_realizados.map((ts: any, idx: number) => (
+                <tr key={`servicio-${idx}`}>
+                  <td>{ts.nombre}</td>
                   <td>1</td>
-                  <td>${(service.basePrice || 0).toFixed(2)}</td>
-                  <td>${(service.basePrice || 0).toFixed(2)}</td>
+                  <td>${parseFloat(ts.precio_base || 0).toFixed(2)}</td>
+                  <td>${parseFloat(ts.precio_base || 0).toFixed(2)}</td>
                 </tr>
-              )}
-
-              {/* Trabajo adicional */}
-              {service.additional > 0 && (
-                <tr>
-                  <td>Trabajo adicional</td>
-                  <td>1</td>
-                  <td>${(service.additional || 0).toFixed(2)}</td>
-                  <td>${(service.additional || 0).toFixed(2)}</td>
-                </tr>
-              )}
-
+              ))}
               {/* Productos */}
-              {service.products &&
-                service.products.length > 0 &&
-                service.products.map((product: any, index: number) => (
-                  <React.Fragment key={index}>
-                    <tr>
-                      <td>{product.productName}</td>
-                      <td>{product.quantity}</td>
-                      <td>${product.unitPrice.toFixed(2)}</td>
-                      <td>${product.total.toFixed(2)}</td>
-                    </tr>
-                    {/* Si es una promoción, mostrar los productos incluidos */}
-                    {product.isPromotion &&
-                      product.includedProducts &&
-                      product.includedProducts.map((includedProduct: any, idx: number) => (
-                        <tr key={`included-${index}-${idx}`} className="included-product">
-                          <td className="pl-6 text-sm">- {includedProduct.productName}</td>
-                          <td className="text-sm">{includedProduct.quantity}</td>
-                          <td className="text-sm">${includedProduct.unitPrice.toFixed(2)}</td>
-                          <td className="text-sm">${includedProduct.total.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                  </React.Fragment>
-                ))}
+              {service.productos && service.productos.length > 0 && service.productos.filter((prod: any) => 
+                // Filtrar solo productos reales, no promociones que puedan estar mezcladas
+                prod.tipo !== 'promocion' && !prod.nombre?.toLowerCase().includes('promoción')
+              ).map((prod: any, idx: number) => (
+                <tr key={`prod-${idx}`}>
+                  <td>{prod.nombre || prod.productName}</td>
+                  <td>{prod.cantidad || prod.quantity || 1}</td>
+                  <td>${parseFloat(prod.precio_venta || prod.unitPrice || 0).toFixed(2)}</td>
+                  <td>${(parseFloat(prod.precio_venta || prod.unitPrice || "0") * parseFloat(prod.cantidad || prod.quantity || "1")).toFixed(2)}</td>
+                </tr>
+              ))}
+              {/* Promociones del campo promociones */}
+              {service.promociones && service.promociones.length > 0 && service.promociones.map((promo: any, idx: number) => {
+                const precioPromocion = parseFloat(promo.precio_total_promocional || promo.precio || 0);
+                return (
+                  <tr key={`promo-${idx}`}>
+                    <td>
+                      <strong>PROMOCIÓN: {promo.nombre}</strong>
+                      {promo.descripcion && (
+                        <div style={{ fontSize: '0.9em', color: '#666', marginTop: '2px' }}>
+                          {promo.descripcion}
+                        </div>
+                      )}
+                    </td>
+                    <td>1</td>
+                    <td>${precioPromocion.toFixed(2)}</td>
+                    <td>${precioPromocion.toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+              {/* Promociones que puedan estar en productos (datos antiguos) */}
+              {service.productos && service.productos.length > 0 && service.productos.filter((prod: any) => 
+                prod.tipo === 'promocion' || prod.nombre?.toLowerCase().includes('promoción')
+              ).map((promo: any, idx: number) => {
+                const precioPromocion = parseFloat(promo.precio_total_promocional || promo.precio_venta || promo.precio || 0);
+                const nombreLimpio = promo.nombre?.replace(/^PROMOCIÓN:\s*/i, '') || '';
+                return (
+                  <tr key={`promo-mixed-${idx}`}>
+                    <td>
+                      <strong>PROMOCIÓN: {nombreLimpio}</strong>
+                      {promo.descripcion && (
+                        <div style={{ fontSize: '0.9em', color: '#666', marginTop: '2px' }}>
+                          {promo.descripcion}
+                        </div>
+                      )}
+                    </td>
+                    <td>1</td>
+                    <td>${precioPromocion.toFixed(2)}</td>
+                    <td>${precioPromocion.toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+              {/* Cobros extra */}
+              {service.cobros_extra && (
+                <tr>
+                  <td>Cobros extra</td>
+                  <td>1</td>
+                  <td>${parseFloat(service.cobros_extra).toFixed(2)}</td>
+                  <td>${parseFloat(service.cobros_extra).toFixed(2)}</td>
+                </tr>
+              )}
+              {/* Descuento */}
+              {service.descuento && parseFloat(service.descuento) > 0 && (
+                <tr>
+                  <td className="text-green-700 font-semibold">Descuento</td>
+                  <td></td>
+                  <td></td>
+                  <td className="text-green-700">-${parseFloat(service.descuento).toFixed(2)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
+        {/* Pagos */}
+        {pagos && pagos.length > 0 && (
+          <div className="mb-4">
+            <h3 className="font-semibold mb-1">Pagos registrados</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Método</th>
+                  <th>Monto</th>
+                  <th>Fecha</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagos.map((pago, idx) => (
+                  <tr key={`pago-${idx}`}>
+                    <td>{pago.metodo_pago}</td>
+                    <td>${parseFloat(pago.monto).toFixed(2)}</td>
+                    <td>{formatDate(pago.fecha_pago)}</td>
+                    <td>{pago.estado ? 'Pagado' : 'Pendiente'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* Total */}
         <div className="total-section">
-          <p>TOTAL A PAGAR: ${(service.total || 0).toFixed(2)}</p>
+          <p>TOTAL A PAGAR: ${(service.precio_total || service.total || 0).toFixed(2)}</p>
         </div>
 
         {/* Notas */}

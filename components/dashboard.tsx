@@ -1,7 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import type { Clientes } from "@/interfaces/clientes.interface"
+import type { Productos } from "@/interfaces/productos.interface"
+import type { Servicios as ServicioInt } from "@/interfaces/servicios.interface"
+import type { Trabajadores } from "@/interfaces/trabajadores.interface"
+import type { Vehiculos } from "@/interfaces/vehiculos.interface"
+import type { Venta } from "@/interfaces/ventas.interface"
+import { getCollection } from "@/lib/firebase"
+import { useEffect, useState } from "react"
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -18,68 +33,48 @@ export default function Dashboard() {
     refreshDashboard()
   }, [])
 
-  const refreshDashboard = () => {
+  const refreshDashboard = async () => {
     try {
-      // Initialize with empty arrays - you can replace this with your data source
-      const services: any[] = []
-      const inventory: any[] = []
-      const sales: any[] = []
-      const employees: any[] = []
-      const clients: any[] = []
-      const vehicles: any[] = []
+      // Cargar datos desde Firestore
+      const [services, inventory, sales, employees, clients, vehicles] = await Promise.all([
+        getCollection("servicios") as Promise<ServicioInt[]>,
+        getCollection("productos") as Promise<Productos[]>,
+        getCollection("ventas") as Promise<Venta[]>,
+        getCollection("trabajadores") as Promise<Trabajadores[]>,
+        getCollection("clientes") as Promise<Clientes[]>,
+        getCollection("vehiculos") as Promise<Vehiculos[]>,
+      ])
 
-      // Update stats with safe calculations
+      // Actualizar estadísticas
       setStats({
-        servicesInProgress: services.filter((s: any) => s.status === "En proceso").length,
-        todaySales: sales.filter((s: any) => isToday(new Date(s.createdAt))).length,
-        lowStockItems: inventory.filter((item: any) => item.quantity <= item.minStock).length,
-        activeEmployees: employees.filter((e: any) => e.status === "Activo").length,
+        servicesInProgress: 0, // no se muestra actualmente
+        todaySales: services.filter(s => isToday(new Date(s.fecha_servicio))).length,
+        lowStockItems: inventory.filter(p => Number(p.cantidad_disponible) <= Number(p.stock_minimo)).length,
+        activeEmployees: employees.filter(e => e.estado).length,
       })
 
-      // Get recent services with safe data handling
+      // Obtener últimos servicios
       const recent = services
-        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        // Ordenar por timestamp de fecha_servicio descendente
+        .sort((a, b) => new Date(b.fecha_servicio).getTime() - new Date(a.fecha_servicio).getTime())
         .slice(0, 5)
-        .map((service: any) => {
-          const client = clients.find((c: any) => c.id === service.clientId) || { name: "Cliente no encontrado" }
-          const vehicle = vehicles.find((v: any) => v.id === service.vehicleId) || {
-            make: "Vehículo",
-            model: "no encontrado",
-            plate: "N/A",
-          }
-          const employee = employees.find((e: any) => e.id === service.employeeId) || { name: "Sin asignar" }
+        .map(s => {
+          const client = clients.find(c => c.id === s.cliente_id) || { nombre: "Cliente no encontrado" }
+          const vehicle = vehicles.find(v => v.id === s.vehiculo_id) || { marca: "Vehículo", modelo: "no encontrado", placa: "N/A" }
+          const employee = employees.find(e => e.id === s.empleado_id) || { nombre: "Sin asignar" }
           return {
-            ...service,
+            ...s,
             client,
             vehicle,
             employee,
-            typeName: service.typeName || service.type || "Servicio general",
+            createdAt: s.fecha_servicio,
+            typeName: s.tipos_servicio_realizados?.map(t => t.nombre).join(", ") || "Servicio general",
+            status: s.pagado ? "Finalizado" : "Pendiente de cobro",
           }
         })
       setRecentServices(recent)
 
-      // Get upcoming appointments with safe filtering
-      const now = new Date()
-      const tomorrow = new Date(now)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-
-      const upcoming = services
-        .filter((s: any) => {
-          if (!s.startTime) return false
-          const startTime = new Date(s.startTime)
-          return startTime >= now && startTime <= tomorrow && s.status === "En proceso"
-        })
-        .sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-        .slice(0, 5)
-        .map((service: any) => {
-          const client = clients.find((c: any) => c.id === service.clientId) || { name: "Cliente no encontrado" }
-          return {
-            ...service,
-            client,
-            typeName: service.typeName || service.type || "Servicio general",
-          }
-        })
-      setUpcomingAppointments(upcoming)
+      // Próximas reservas omitidas (sección comentada en UI)
     } catch (error) {
       console.error("Error refreshing dashboard:", error)
       // Set default values on error
@@ -102,7 +97,6 @@ export default function Dashboard() {
     <div className="dashboard-container">
       {/* Stats Grid */}
       <div className="stats-grid">
-        <StatCard title="Servicios en Proceso" value={stats.servicesInProgress} />
         <StatCard title="Ventas Hoy" value={stats.todaySales} />
         <StatCard title="Productos Bajo Stock" value={stats.lowStockItems} />
         <StatCard title="Empleados Activos" value={stats.activeEmployees} />
@@ -113,40 +107,39 @@ export default function Dashboard() {
         <div className="desktop-services-section">
           <div className="bg-white p-4 rounded shadow lg:col-span-2">
             <h3 className="text-lg font-bold mb-4">Últimos Servicios</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="py-2 px-4 border">Cliente</th>
-                    <th className="py-2 px-4 border">Vehículo</th>
-                    <th className="py-2 px-4 border">Servicio</th>
-                    <th className="py-2 px-4 border">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentServices.length > 0 ? (
-                    recentServices.map((service, index) => (
-                      <tr key={service.id || index}>
-                        <td className="py-2 px-4 border">{service.client.name}</td>
-                        <td className="py-2 px-4 border">
-                          {service.vehicle.make} {service.vehicle.model}
-                        </td>
-                        <td className="py-2 px-4 border">{service.typeName}</td>
-                        <td className="py-2 px-4 border">
-                          <StatusBadge status={service.status} />
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="py-4 text-center text-gray-500">
-                        No hay servicios recientes
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {/* Tabla de Últimos Servicios con ShadCN Table */}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Vehículo</TableHead>
+                  <TableHead>Placa</TableHead>
+                  <TableHead>Servicio</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Estado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentServices.length > 0 ? (
+                  recentServices.map((service, index) => (
+                    <TableRow key={service.id || index}>
+                      <TableCell>{service.client.nombre}</TableCell>
+                      <TableCell>{service.vehicle.marca} {service.vehicle.modelo}</TableCell>
+                      <TableCell>{service.vehicle.placa}</TableCell>
+                      <TableCell>{service.typeName}</TableCell>
+                      <TableCell>{service.createdAt ? formatDate(new Date(service.createdAt)) : 'N/A'}</TableCell>
+                      <TableCell><StatusBadge status={service.status} /></TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-gray-500">
+                      No hay servicios recientes
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </div>
 
@@ -165,7 +158,7 @@ export default function Dashboard() {
                 >
                   <div className="mobile-card-header">
                     <div className="mobile-card-main-info">
-                      <div className="mobile-card-client">{service.client.name}</div>
+                      <div className="mobile-card-client">{service.client.nombre}</div>
                       <div className="mobile-card-vehicle">
                         {service.vehicle.make} {service.vehicle.model}
                       </div>
@@ -221,30 +214,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Upcoming Appointments */}
-        <div className="appointments-section">
-          <div className="bg-white p-4 rounded shadow">
-            <h3 className="appointments-title">Próximas Reservas</h3>
-            <div className="appointments-list">
-              {upcomingAppointments.length > 0 ? (
-                upcomingAppointments.map((appointment, index) => (
-                  <div key={appointment.id || index} className="appointment-card">
-                    <div className="appointment-service">{appointment.typeName}</div>
-                    <div className="appointment-client">{appointment.client.name}</div>
-                    <div className="appointment-time">
-                      <i className="far fa-clock"></i>
-                      {formatTime(new Date(appointment.startTime))}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="appointments-empty">
-                  <p>No hay servicios programados</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        {/* Próximas Reservas comentado */}
       </div>
     </div>
   )

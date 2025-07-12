@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { useEffect, useState } from "react"
 
 interface MobileLayoutProps {
   currentSection: string
@@ -12,10 +12,46 @@ interface MobileLayoutProps {
   children: React.ReactNode
 }
 
+
 export default function MobileLayout({ currentSection, setCurrentSection, onLogout, children }: MobileLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isScrollingDown, setIsScrollingDown] = useState(false)
   const [lastScrollY, setLastScrollY] = useState(0)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [isTrabajador, setIsTrabajador] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    // Detectar si el usuario es TRABAJADOR desde localStorage
+    try {
+      const user = localStorage.getItem("userData");
+      if (user) {
+        const parsed = JSON.parse(user);
+        setIsTrabajador(parsed?.rol === "TRABAJADOR");
+      } else {
+        setIsTrabajador(false);
+      }
+    } catch {
+      setIsTrabajador(false);
+    }
+  }, []);
+  // Detectar si el usuario es ADMIN desde localStorage
+  // Detectar si el usuario es ADMINISTRADOR desde localStorage
+  useEffect(() => {
+    const storedRole = localStorage.getItem("userRole");
+    const role = storedRole ? storedRole.toLowerCase() : "";
+    setIsAdmin(role === "administrador");
+  }, []);
+  useEffect(() => {
+    // Observa cambios en la clase del body para detectar si hay un dialog abierto
+    const observer = new MutationObserver(() => {
+      setDialogOpen(document.body.classList.contains("dialog-open") || document.body.classList.contains("\n  dialog-open"));
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    // Inicializa el estado
+    setDialogOpen(document.body.classList.contains("dialog-open") || document.body.classList.contains("\n  dialog-open"));
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -80,69 +116,90 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
       {/* Main Content */}
       <main className="mobile-main-content">{children}</main>
 
-      {/* Floating Bottom Navigation */}
-      <nav className={`mobile-floating-nav ${isScrollingDown ? "hidden" : "visible"}`}>
-        <div className="mobile-nav-grid">
-          <button
-            className={`mobile-nav-button ${currentSection === "dashboard" ? "active" : ""}`}
-            onClick={() => handleSectionClick("dashboard")}
-          >
-            <i className="fas fa-tachometer-alt"></i>
-            <span>Panel</span>
-          </button>
-          <button
-            className={`mobile-nav-button ${currentSection === "services" ? "active" : ""}`}
-            onClick={() => handleSectionClick("services")}
-          >
-            <i className="fas fa-tools"></i>
-            <span>Servicios</span>
-          </button>
-          <button
-            className={`mobile-nav-button ${currentSection === "clients" ? "active" : ""}`}
-            onClick={() => handleSectionClick("clients")}
-          >
-            <i className="fas fa-users"></i>
-            <span>Clientes</span>
-          </button>
-          <button
-            className={`mobile-nav-button ${currentSection === "best-sellers" ? "active" : ""}`}
-            onClick={() => handleSectionClick("best-sellers")}
-          >
-            <i className="fas fa-trophy"></i>
-            <span>Más vendidos</span>
-          </button>
-        </div>
-        <div className="mobile-nav-grid mobile-nav-grid-second">
-          <button
-            className={`mobile-nav-button ${currentSection === "inventory" ? "active" : ""}`}
-            onClick={() => handleSectionClick("inventory")}
-          >
-            <i className="fas fa-boxes"></i>
-            <span>Inventario</span>
-          </button>
-          <button
-            className={`mobile-nav-button ${currentSection === "employees" ? "active" : ""}`}
-            onClick={() => handleSectionClick("employees")}
-          >
-            <i className="fas fa-user-hard-hat"></i>
-            <span>Personal</span>
-          </button>
-          <button
-            className={`mobile-nav-button ${currentSection === "reports" ? "active" : ""}`}
-            onClick={() => handleSectionClick("reports")}
-          >
-            <i className="fas fa-chart-bar"></i>
-            <span>Reportes</span>
-          </button>
-          <button
-            className={`mobile-nav-button ${currentSection === "cash-register" ? "active" : ""}`}
-            onClick={() => handleSectionClick("cash-register")}
-          >
-            <i className="fas fa-cash-register"></i>
-            <span>Caja</span>
-          </button>
-        </div>
-      </nav>
+      {/* Floating Bottom Navigation: ocultar todo el nav si hay dialog */}
+      {!dialogOpen && (
+        <nav className={`mobile-floating-nav ${isScrollingDown ? "hidden" : "visible"}`}>
+          <div className="mobile-nav-grid">
+            <button
+              className={`mobile-nav-button ${currentSection === "dashboard" ? "active" : ""}`}
+              onClick={() => handleSectionClick("dashboard")}
+            >
+              <i className="fas fa-tachometer-alt"></i>
+              <span>Panel</span>
+            </button>
+            <button
+              className={`mobile-nav-button ${currentSection === "services" ? "active" : ""}`}
+              onClick={() => handleSectionClick("services")}
+            >
+              <i className="fas fa-tools"></i>
+              <span>Servicios</span>
+            </button>
+            <button
+              className={`mobile-nav-button ${currentSection === "clients" ? "active" : ""}`}
+              onClick={() => handleSectionClick("clients")}
+            >
+              <i className="fas fa-users"></i>
+              <span>Clientes</span>
+            </button>
+            <button
+              className={`mobile-nav-button ${currentSection === "best-sellers" ? "active" : ""}`}
+              onClick={() => handleSectionClick("best-sellers")}
+            >
+              <i className="fas fa-trophy"></i>
+              <span>Más vendidos</span>
+            </button>
+          </div>
+          <div className="mobile-nav-grid mobile-nav-grid-second">
+            <button
+              className={`mobile-nav-button ${currentSection === "inventory" ? "active" : ""}`}
+              onClick={() => handleSectionClick("inventory")}
+            >
+              <i className="fas fa-boxes"></i>
+              <span>Inventario</span>
+            </button>
+            {/* Solo mostrar Personal si NO es trabajador */}
+            {isTrabajador ? null : (
+              <button
+                className={`mobile-nav-button ${currentSection === "employees" ? "active" : ""}`}
+                onClick={() => handleSectionClick("employees")}
+              >
+                <i className="fas fa-user-hard-hat"></i>
+                <span>
+                  <i className="fas fa-users-cog mr-1"></i>
+                  Personal
+                </span>
+              </button>
+            )}
+            {/* Caja siempre visible */}
+            <button
+              className={`mobile-nav-button ${currentSection === "cash-register" ? "active" : ""}`}
+              onClick={() => handleSectionClick("cash-register")}
+            >
+              <i className="fas fa-cash-register"></i>
+              <span>Caja</span>
+            </button>
+            {/* Opciones solo para ADMINISTRADOR */}
+            {isAdmin && (
+              <>
+                <button
+                  className={`mobile-nav-button ${currentSection === "reports" ? "active" : ""}`}
+                  onClick={() => handleSectionClick("reports")}
+                >
+                  <i className="fas fa-chart-bar"></i>
+                  <span>Reportes</span>
+                </button>
+                <button
+                  className={`mobile-nav-button ${currentSection === "admin" ? "active" : ""}`}
+                  onClick={() => handleSectionClick("admin")}
+                >
+                  <i className="fas fa-cog"></i>
+                  <span>Administración</span>
+                </button>
+              </>
+            )}
+          </div>
+        </nav>
+      )}
 
       {/* Mobile Sidebar */}
       {sidebarOpen && (
@@ -221,15 +278,18 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
                     <span>Productos más vendidos</span>
                   </button>
                 </li>
-                <li>
-                  <button
-                    className={`mobile-sidebar-button ${currentSection === "employees" ? "active" : ""}`}
-                    onClick={() => handleSectionClick("employees")}
-                  >
-                    <i className="fas fa-user-hard-hat"></i>
-                    <span>Trabajadores</span>
-                  </button>
-                </li>
+                {/* Solo mostrar Trabajadores si NO es trabajador */}
+                {!isTrabajador && (
+                  <li>
+                    <button
+                      className={`mobile-sidebar-button ${currentSection === "employees" ? "active" : ""}`}
+                      onClick={() => handleSectionClick("employees")}
+                    >
+                      <i className="fas fa-user-hard-hat"></i>
+                      <span>Trabajadores</span>
+                    </button>
+                  </li>
+                )}
                 <li>
                   <button
                     className={`mobile-sidebar-button ${currentSection === "cash-register" ? "active" : ""}`}
@@ -248,24 +308,29 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
                     <span>Sistema de Lealtad</span>
                   </button>
                 </li>
-                <li>
-                  <button
-                    className={`mobile-sidebar-button ${currentSection === "reports" ? "active" : ""}`}
-                    onClick={() => handleSectionClick("reports")}
-                  >
-                    <i className="fas fa-chart-bar"></i>
-                    <span>Reportes</span>
-                  </button>
-                </li>
-                <li>
-                  <button
-                    className={`mobile-sidebar-button ${currentSection === "admin" ? "active" : ""}`}
-                    onClick={() => handleSectionClick("admin")}
-                  >
-                    <i className="fas fa-cog"></i>
-                    <span>Administración</span>
-                  </button>
-                </li>
+                {/* Opciones solo para administradores */}
+                {isAdmin && (
+                  <li>
+                    <button
+                      className={`mobile-sidebar-button ${currentSection === "reports" ? "active" : ""}`}
+                      onClick={() => handleSectionClick("reports")}
+                    >
+                      <i className="fas fa-chart-bar"></i>
+                      <span>Reportes</span>
+                    </button>
+                  </li>
+                )}
+                {isAdmin && (
+                  <li>
+                    <button
+                      className={`mobile-sidebar-button ${currentSection === "admin" ? "active" : ""}`}
+                      onClick={() => handleSectionClick("admin")}
+                    >
+                      <i className="fas fa-cog"></i>
+                      <span>Administración</span>
+                    </button>
+                  </li>
+                )}
               </ul>
             </nav>
           </div>

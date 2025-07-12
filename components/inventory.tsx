@@ -1,32 +1,36 @@
-"use client"
-
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
-import { supabaseDb } from "@/lib/SupaBasClient"
-import { supabase } from "@/lib/supabaseClient"
-import type React from "react"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { AlertTriangle, ClipboardList, DollarSign, Edit, Eye, Filter, Layers, Minus, Package, Plus, Search, Trash2 } from "lucide-react"
+import { showToast } from "nextjs-toast-notify"
 import { useEffect, useState } from "react"
-
-interface Product {
+import type { Categorias } from "../interfaces/categorias.interface"
+import type { Productos } from "../interfaces/productos.interface"
+import type { Proveedor } from "../interfaces/proveedores.interface"
+import { addDocument, getCollection } from "../lib/firebase"
+// Definir la interfaz para tipos de servicio
+interface TipoServicio {
   id: string
-  name: string
-  category: string
-  price: number
-  cost: number
-  quantity: number
-  minStock: number
-  supplier: string
-  description: string
-  associatedService: string
-  createdAt: string
+  nombre: string
+  descripcion?: string
+  id_categoria: string
+  duracion_estimada?: number
+  estado?: boolean
+  precio_base?: number
 }
 
 export default function Inventory() {
-  const { toast } = useToast()
-  const [products, setProducts] = useState<Product[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [currentProduct, setCurrentProduct] = useState<Product | null>(null)
+  const [products, setProducts] = useState<Productos[]>([])
+  const [proveedores, setProveedores] = useState<Proveedor[]>([])
+  const [formDialogOpen, setFormDialogOpen] = useState(false)
+  const [categorias, setCategorias] = useState<Categorias[]>([])
+  const [servicios, setServicios] = useState<TipoServicio[]>([])
+  const [currentProduct, setCurrentProduct] = useState<Productos | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [filterCategory, setFilterCategory] = useState("")
 
@@ -41,54 +45,111 @@ export default function Inventory() {
   const [description, setDescription] = useState("")
   const [associatedService, setAssociatedService] = useState("")
 
-  const categories = [
-    "Limpieza",
-    "Aceites",
-    "Accesorios",
-    "Herramientas",
-    "Filtros",
-    "Neumáticos",
-    "Baterías",
-    "Lubricantes",
-    "Otros",
-  ]
+  // Loading state for submit button
+  const [loading, setLoading] = useState(false)
 
-  const services = [
-    "Lavado estándar",
-    "Lavado premium (con cera o espuma activa)",
-    "Lavado de motor",
-    "Aspirado interior",
-    "Lavado de motos",
-    "Pulitura",
-    "Detailing interior/exterior",
-    "Revisión de luces",
-    "Cambio de aceite",
-    "Ninguno",
-  ]
-
+  // Cargar categorías y servicios desde Firebase
   useEffect(() => {
-    fetchSupabaseInventory()
+    fetchCategorias()
+    fetchServicios()
   }, [])
 
-  const fetchSupabaseInventory = async () => {
+  const fetchCategorias = async () => {
     try {
-      const productsFromSupabase = await supabaseDb.getProductos()
-      setProducts(productsFromSupabase)
+      const categoriasFromFirebase = await getCollection("categorias")
+      setCategorias(
+        categoriasFromFirebase.map((c: any) => ({
+          id: c.id,
+          nombre: c.nombre || "",
+          descripcion: c.descripcion || ""
+        }))
+      )
     } catch (error) {
-      console.error("Error cargando inventario desde Supabase:", error)
+      setCategorias([])
+    }
+  }
+
+  const fetchServicios = async () => {
+    try {
+      const serviciosFromFirebase = await getCollection("tipos_servicio")
+      setServicios(
+        serviciosFromFirebase.map((s: any) => ({
+          id: s.id,
+          nombre: s.nombre || "",
+          descripcion: s.descripcion || "",
+          id_categoria: s.id_categoria || "",
+          duracion_estimada: s.duracion_estimada,
+          estado: s.estado,
+          precio_base: s.precio_base
+        }))
+      )
+    } catch (error) {
+      setServicios([])
+    }
+  }
+
+  useEffect(() => {
+    fetchProducts()
+    fetchProveedores()
+  }, [])
+
+  const fetchProveedores = async () => {
+    try {
+      const proveedoresFromFirebase = await getCollection("proveedores")
+      setProveedores(
+        proveedoresFromFirebase.map((p: any) => ({
+          id: p.id,
+          rif: p.rif || "",
+          nombre: p.nombre || "",
+          contacto: p.contacto || "",
+          telefono: p.telefono || "",
+          email: p.email || "",
+          direccion: p.direccion || "",
+          activo: typeof p.activo === "boolean" ? p.activo : true,
+          fecha_registro: p.fecha_registro || "",
+        }))
+      )
+    } catch (error) {
+      setProveedores([])
+    }
+  }
+
+  const fetchProducts = async () => {
+    try {
+      const productsFromFirebase = await getCollection("productos")
+      // Map or cast the fetched data to match the Productos interface
+      setProducts(
+        productsFromFirebase.map((p: any) => ({
+          id: p.id,
+          nombre: p.nombre || "",
+          descripcion: p.descripcion || "",
+          id_categoria: p.id_categoria || "",
+          id_tipo_servicio: p.id_tipo_servicio || "",
+          costo: p.costo ?? 0,
+          precio_venta: p.precio_venta ?? 0,
+          cantidad_disponible: p.cantidad_disponible ?? "0",
+          stock_minimo: p.stock_minimo ?? "0",
+          id_proveedor: p.id_proveedor || "",
+        }))
+      )
+    } catch (error) {
+      console.error("Error cargando inventario desde Firebase:", error)
       setProducts([])
     }
   }
 
-  const toggleForm = () => {
-    setShowForm(!showForm)
-    if (!showForm) {
-      resetForm()
-    }
+  const openFormDialog = () => {
+    setCurrentProduct(null)
+    setFormDialogOpen(true)
+    resetForm()
+  }
+  const closeFormDialog = () => {
+    setFormDialogOpen(false)
+    setCurrentProduct(null)
+    resetForm()
   }
 
   const resetForm = () => {
-    setCurrentProduct(null)
     setName("")
     setCategory("")
     setPrice("")
@@ -102,263 +163,175 @@ export default function Inventory() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    // Validaciones mejoradas
     if (!name.trim()) {
-      toast({
-        title: "Error",
-        description: "El nombre del producto es obligatorio",
-        variant: "destructive",
-      })
+      showToast.error("El nombre del producto es obligatorio", { duration: 4000, position: "top-center" })
       return
     }
-
     if (!category) {
-      toast({
-        title: "Error",
-        description: "La categoría es obligatoria",
-        variant: "destructive",
-      })
+      showToast.error("La categoría es obligatoria", { duration: 4000, position: "top-center" })
       return
     }
-
-    const priceValue = Number.parseFloat(price)
-    if (isNaN(priceValue) || priceValue <= 0) {
-      toast({
-        title: "Error",
-        description: "El precio debe ser mayor a 0",
-        variant: "destructive",
-      })
+    if (!price || isNaN(Number(price))) {
+      showToast.error("El precio de venta es obligatorio y debe ser numérico", { duration: 4000, position: "top-center" })
       return
     }
-
-    const costValue = Number.parseFloat(cost || "0")
-    if (isNaN(costValue) || costValue < 0) {
-      toast({
-        title: "Error",
-        description: "El costo no puede ser negativo",
-        variant: "destructive",
-      })
+    if (!quantity || isNaN(Number(quantity))) {
+      showToast.error("La cantidad disponible es obligatoria y debe ser numérica", { duration: 4000, position: "top-center" })
       return
     }
-
-    const quantityValue = Number.parseInt(quantity)
-    if (isNaN(quantityValue) || quantityValue < 0) {
-      toast({
-        title: "Error",
-        description: "La cantidad no puede ser negativa",
-        variant: "destructive",
-      })
+    if (!minStock || isNaN(Number(minStock))) {
+      showToast.error("El stock mínimo es obligatorio y debe ser numérico", { duration: 4000, position: "top-center" })
       return
     }
-
-    const minStockValue = Number.parseInt(minStock)
-    if (isNaN(minStockValue) || minStockValue < 0) {
-      toast({
-        title: "Error",
-        description: "El stock mínimo no puede ser negativo",
-        variant: "destructive",
-      })
+    // Validar nombre único (ignorando espacios y mayúsculas/minúsculas)
+    const nombreNormalizado = name.trim().toLowerCase().replace(/\s+/g, " ")
+    const existe = products.some(p => p.nombre.trim().toLowerCase().replace(/\s+/g, " ") === nombreNormalizado && (!currentProduct || p.id !== currentProduct.id))
+    if (existe) {
+      showToast.error("Ya existe un producto con ese nombre", { duration: 4000, position: "top-center" })
       return
     }
-
+    setLoading(true)
     try {
-      const productData: Product = {
-        id: currentProduct?.id || Date.now().toString(),
-        name: name.trim(),
-        category,
-        price: priceValue,
-        cost: costValue,
-        quantity: quantityValue,
-        minStock: minStockValue,
-        supplier: supplier.trim(),
-        description: description.trim(),
-        associatedService: associatedService === "Ninguno" ? "" : associatedService,
-        createdAt: currentProduct?.createdAt || new Date().toISOString(),
+      const productData = {
+        nombre: name.trim(),
+        descripcion: description.trim(),
+        id_categoria: category,
+        id_tipo_servicio: associatedService && associatedService !== "ninguno" ? associatedService : "",
+        costo: cost ? Number(cost) : 0,
+        precio_venta: Number(price),
+        cantidad_disponible: quantity.toString(),
+        stock_minimo: minStock.toString(),
+        id_proveedor: supplier || "",
       }
-      let result
       if (currentProduct) {
-        // Actualizar producto en Supabase
-        result = await supabase
-          .from("productos")
-          .update({
-            name: productData.name,
-            category: productData.category,
-            price: productData.price,
-            cost: productData.cost,
-            quantity: productData.quantity,
-            minStock: productData.minStock,
-            supplier: productData.supplier,
-            description: productData.description,
-            associatedService: productData.associatedService,
-          })
-          .eq("id", currentProduct.id)
-        toast({
-          title: "Actualizado",
-          description: "Producto actualizado exitosamente",
-          variant: "success",
-        })
+        // Actualizar producto existente
+        const { updateDocument } = await import("../lib/firebase")
+        await updateDocument(`productos/${currentProduct.id}`, productData)
+        showToast.success("Producto actualizado exitosamente", { duration: 4000, position: "top-center" })
       } else {
-        // Crear producto en Supabase (sin id ni createdAt)
-        const newProduct = {
-          name: productData.name,
-          category: productData.category,
-          price: productData.price,
-          cost: productData.cost,
-          quantity: productData.quantity,
-          minStock: productData.minStock,
-          supplier: productData.supplier,
-          description: productData.description,
-          associatedService: productData.associatedService,
-        }
-        result = await supabaseDb.createProducto(newProduct)
-        toast({
-          title: "Agregado",
-          description: "Producto agregado exitosamente",
-          variant: "success",
-        })
+        // Crear nuevo producto
+        await addDocument("productos", productData)
+        showToast.success("Producto registrado exitosamente", { duration: 4000, position: "top-center" })
       }
-      fetchSupabaseInventory()
+      await fetchProducts()
+      setFormDialogOpen(false)
       resetForm()
-      setShowForm(false)
-    } catch (error) {
-      console.error("Error guardando producto en Supabase:", error)
-      toast({
-        title: "Error",
-        description: "Ocurrió un error al guardar el producto en Supabase",
-        variant: "destructive",
-      })
+    } catch (error: any) {
+      showToast.error(error?.message || "Ocurrió un error al guardar el producto", { duration: 4000, position: "top-center" })
+    } finally {
+      setLoading(false)
     }
   }
 
-  const editProduct = (product: Product) => {
+  // Editar producto: llena el formulario con los datos del producto seleccionado
+  const editProduct = (product: Productos) => {
     setCurrentProduct(product)
-    setName(product.name)
-    setCategory(product.category)
-    setPrice(product.price.toString())
-    setCost(product.cost.toString())
-    setQuantity(product.quantity.toString())
-    setMinStock(product.minStock.toString())
-    setSupplier(product.supplier)
-    setDescription(product.description)
-    setAssociatedService(product.associatedService || "Ninguno")
-    setShowForm(true)
+    setName(product.nombre)
+    setCategory(product.id_categoria)
+    setPrice(product.precio_venta?.toString() || "")
+    setCost(product.costo?.toString() || "")
+    setQuantity(product.cantidad_disponible?.toString() || "")
+    setMinStock(product.stock_minimo?.toString() || "")
+    setSupplier(product.id_proveedor || "")
+    setDescription(product.descripcion || "")
+    setAssociatedService(product.id_tipo_servicio || "ninguno")
+    setFormDialogOpen(true)
   }
 
+  // Estado para el diálogo de confirmación de borrado
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteProductId, setDeleteProductId] = useState<string | null>(null)
+
+  // Eliminar producto de Firebase
   const deleteProduct = async (id: string) => {
-    if (!confirm("¿Está seguro de eliminar este producto?")) return
     try {
-      await supabase
-        .from("productos")
-        .delete()
-        .eq("id", id)
-      toast({
-        title: "Eliminado",
-        description: "Producto eliminado exitosamente",
-        variant: "success",
-      })
-      fetchSupabaseInventory()
-    } catch (error) {
-      console.error("Error eliminando producto en Supabase:", error)
-      toast({
-        title: "Error",
-        description: "Ocurrió un error al eliminar el producto en Supabase",
-        variant: "destructive",
-      })
+      await import("../lib/firebase").then(({ deleteDocument }) => deleteDocument(`productos/${id}`))
+      showToast.success("Producto eliminado exitosamente", { duration: 4000, position: "top-center" })
+      fetchProducts()
+    } catch (error: any) {
+      showToast.error(error?.message || "Ocurrió un error al eliminar el producto", { duration: 4000, position: "top-center" })
     }
   }
 
+  // Ajustar stock en Firebase
   const adjustStock = async (id: string, adjustment: number) => {
     try {
       const product = products.find((p) => p.id === id)
       if (!product) return
-      const newQuantity = product.quantity + adjustment
+      const currentStock = Number(product.cantidad_disponible)
+      const newQuantity = currentStock + adjustment
       if (newQuantity < 0) {
-        toast({
-          title: "Error",
-          description: "No se puede reducir el stock por debajo de 0",
-          variant: "destructive",
-        })
+        showToast.error("No se puede reducir el stock por debajo de 0", { duration: 4000, position: "top-center" })
         return
       }
-      await supabase
-        .from("productos")
-        .update({ quantity: newQuantity })
-        .eq("id", id)
-      toast({
-        title: "Stock actualizado",
-        description: `Stock ${adjustment > 0 ? "aumentado" : "reducido"} exitosamente`,
-        variant: "success",
-      })
-      fetchSupabaseInventory()
-    } catch (error) {
-      console.error("Error actualizando stock en Supabase:", error)
-      toast({
-        title: "Error",
-        description: "Ocurrió un error al actualizar el stock en Supabase",
-        variant: "destructive",
-      })
+      await import("../lib/firebase").then(({ updateDocument }) =>
+        updateDocument(`productos/${id}`, { cantidad_disponible: newQuantity.toString() })
+      )
+      showToast.success(`Stock ${adjustment > 0 ? "aumentado" : "reducido"} exitosamente`, { duration: 4000, position: "top-center" })
+      fetchProducts()
+    } catch (error: any) {
+      showToast.error(error?.message || "Ocurrió un error al actualizar el stock", { duration: 4000, position: "top-center" })
     }
   }
 
   // Filter products based on search and category
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.description.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = filterCategory === "" || product.category === filterCategory
+      product.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = filterCategory === "" || product.id_categoria === filterCategory
     return matchesSearch && matchesCategory
   })
 
   // Get low stock products
-  const lowStockProducts = products.filter((product) => product.quantity <= product.minStock)
+  const lowStockProducts = products.filter((product) => Number(product.cantidad_disponible) <= Number(product.stock_minimo))
 
   // Calculate total inventory value
-  const totalValue = products.reduce((sum, product) => sum + product.price * product.quantity, 0)
-  const totalCost = products.reduce((sum, product) => sum + product.cost * product.quantity, 0)
+  const totalValue = products.reduce((sum, product) => sum + (Number(product.precio_venta) * Number(product.cantidad_disponible)), 0)
+  const totalCost = products.reduce((sum, product) => sum + (Number(product.costo) * Number(product.cantidad_disponible)), 0)
+
+  // Estado para mostrar el dialog de información
+  const [infoDialogOpen, setInfoDialogOpen] = useState(false)
+  const [infoProduct, setInfoProduct] = useState<Productos | null>(null)
 
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Total Productos</h3>
-            <p className="text-3xl font-bold text-yellow-600">{products.length}</p>
-          </div>
+        <Card className="p-4 flex flex-col items-center justify-center gap-2">
+          <Package className="w-8 h-8 text-yellow-500" />
+          <span className="text-lg font-bold text-gray-800">Total Productos</span>
+          <span className="text-3xl font-bold text-yellow-600">{products.length}</span>
         </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Valor Inventario</h3>
-            <p className="text-3xl font-bold text-green-600">${totalValue.toFixed(2)}</p>
-          </div>
+        <Card className="p-4 flex flex-col items-center justify-center gap-2">
+          <DollarSign className="w-8 h-8 text-green-500" />
+          <span className="text-lg font-bold text-gray-800">Valor Inventario</span>
+          <span className="text-3xl font-bold text-green-600">${totalValue.toFixed(2)}</span>
         </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Costo Total</h3>
-            <p className="text-3xl font-bold text-blue-600">${totalCost.toFixed(2)}</p>
-          </div>
+        <Card className="p-4 flex flex-col items-center justify-center gap-2">
+          <Layers className="w-8 h-8 text-blue-500" />
+          <span className="text-lg font-bold text-gray-800">Costo Total</span>
+          <span className="text-3xl font-bold text-blue-600">${totalCost.toFixed(2)}</span>
         </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Stock Bajo</h3>
-            <p className="text-3xl font-bold text-red-600">{lowStockProducts.length}</p>
-          </div>
+        <Card className="p-4 flex flex-col items-center justify-center gap-2">
+          <AlertTriangle className="w-8 h-8 text-red-500" />
+          <span className="text-lg font-bold text-gray-800">Stock Bajo</span>
+          <span className="text-3xl font-bold text-red-600">{lowStockProducts.length}</span>
         </Card>
       </div>
 
       {/* Low Stock Alert */}
       {lowStockProducts.length > 0 && (
         <Card className="p-4 bg-red-50 border-red-200">
-          <div className="flex items-center mb-2">
-            <i className="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+          <div className="flex items-center mb-2 gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
             <h3 className="text-lg font-bold text-red-700">Productos con Stock Bajo</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {lowStockProducts.map((product) => (
-              <div key={product.id} className="bg-white p-2 rounded border">
-                <span className="font-semibold">{product.name}</span>
-                <span className="text-red-600 ml-2">({product.quantity} unidades)</span>
+              <div key={product.id} className="bg-white p-2 rounded border flex items-center gap-2">
+                <Badge variant="destructive">{product.cantidad_disponible} unidades</Badge>
+                <span className="font-semibold">{product.nombre}</span>
               </div>
             ))}
           </div>
@@ -367,348 +340,352 @@ export default function Inventory() {
 
       {/* Main Inventory Management */}
       <Card className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center space-x-4">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-6 h-6 text-primary" />
             <h2 className="text-xl font-bold">Gestión de Inventario</h2>
-            {showForm && (
-              <div className="flex items-center text-sm text-gray-600">
-                <i className="fas fa-arrow-right mr-2"></i>
-                <span>{currentProduct ? "Editando producto" : "Nuevo producto"}</span>
-              </div>
-            )}
           </div>
-          <div className="flex space-x-2">
-            {showForm ? (
-              <>
-                <Button onClick={toggleForm} variant="outline">
-                  <i className="fas fa-arrow-left mr-2"></i>Volver
-                </Button>
-                <Button onClick={toggleForm} variant="destructive">
-                  <i className="fas fa-times mr-2"></i>Cancelar
-                </Button>
-              </>
-            ) : (
-              <Button onClick={toggleForm} variant="yellow">
-                <i className="fas fa-plus mr-2"></i>Nuevo Producto
-              </Button>
-            )}
-          </div>
+          <Button onClick={openFormDialog} variant="yellow" className="flex items-center gap-2">
+            <Plus className="w-5 h-5" /> Nuevo Producto
+          </Button>
         </div>
 
         {/* Search and Filter */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="form-group">
-            <label htmlFor="searchTerm">Buscar Producto</label>
-            <input
-              type="text"
-              id="searchTerm"
-              placeholder="Buscar por nombre o descripción..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="searchTerm" className="font-medium">Buscar Producto</Label>
+            <div className="relative">
+              <Input
+                id="searchTerm"
+                placeholder="Buscar por nombre o descripción..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            </div>
           </div>
-          <div className="form-group">
-            <label htmlFor="filterCategory">Filtrar por Categoría</label>
-            <select id="filterCategory" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-              <option value="">Todas las categorías</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="filterCategory" className="font-medium">Filtrar por Categoría</Label>
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger id="filterCategory" className="pl-10">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <SelectValue placeholder="Todas las categorías" />
+              </SelectTrigger>
+              <SelectContent>
+                {/* No SelectItem with value="" */}
+                {categorias.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.nombre}>{cat.nombre}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
-        {showForm && (
-          <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-100">
-            <div className="bg-gradient-to-r from-blue-50 to-white p-4 border-b border-gray-100 rounded-t-lg">
-              <h3 className="text-xl font-bold text-gray-800">
-                {currentProduct ? "Editar Producto" : "Nuevo Producto"}
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Complete los datos del producto en el formulario a continuación
-              </p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6">
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                  <h4 className="text-md font-semibold text-gray-700 mb-4 flex items-center">
-                    <i className="fas fa-box mr-2 text-blue-500"></i>
-                    Información Básica
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className="form-group">
-                      <label htmlFor="productName" className="font-medium text-gray-700">
-                        Nombre del Producto*
-                      </label>
-                      <input
-                        type="text"
-                        id="productName"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        required
-                        className="mt-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Nombre del producto"
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="productCategory" className="font-medium text-gray-700">
-                        Categoría*
-                      </label>
-                      <select
-                        id="productCategory"
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        required
-                        className="mt-1 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Seleccione...</option>
-                        {categories.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
+        {/* Dialog para registrar producto */}
+        <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
+          <DialogContent className="max-w-2xl w-full p-0 max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="px-8 pt-6 pb-2 sticky top-0 z-10 bg-white">
+              <DialogTitle className="text-2xl">Registrar Producto</DialogTitle>
+              <DialogDescription className="text-base text-gray-500">
+                Completa los datos para registrar un nuevo producto en el inventario.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-6 px-8 pb-8 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Columna 1: Datos principales */}
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productName">Nombre del Producto*</Label>
+                    <Input
+                      id="productName"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                      placeholder="Nombre del producto"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productCategory">Categoría*</Label>
+                    <Select value={category} onValueChange={setCategory} required>
+                      <SelectTrigger id="productCategory">
+                        <SelectValue placeholder="Seleccione..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categorias.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.nombre}>{cat.nombre}</SelectItem>
                         ))}
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="productService" className="font-medium text-gray-700">
-                        Servicio Asociado
-                      </label>
-                      <select
-                        id="productService"
-                        value={associatedService}
-                        onChange={(e) => setAssociatedService(e.target.value)}
-                        className="mt-1 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        {services.map((service) => (
-                          <option key={service} value={service}>
-                            {service}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productService">Servicio Asociado</Label>
+                    <Select value={associatedService} onValueChange={setAssociatedService}>
+                      <SelectTrigger id="productService">
+                        <SelectValue placeholder="Ninguno" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {category && servicios.filter(s => s.id_categoria === (categorias.find(c => c.nombre === category)?.id || "")).length > 0
+                          ? servicios.filter(s => s.id_categoria === (categorias.find(c => c.nombre === category)?.id || "")).map(service => (
+                              <SelectItem key={service.id} value={service.id}>{service.nombre}</SelectItem>
+                            ))
+                          : null}
+                        <SelectItem value="ninguno">Ninguno</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
+                {/* Columna 2: Precios y stock */}
+                <div className="space-y-4">
 
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                  <h4 className="text-md font-semibold text-gray-700 mb-4 flex items-center">
-                    <i className="fas fa-tag mr-2 text-blue-500"></i>
-                    Precios y Stock
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className="form-group">
-                      <label htmlFor="productPrice" className="font-medium text-gray-700">
-                        Precio de Venta ($)*
-                      </label>
-                      <div className="relative mt-1">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <span className="text-gray-500 sm:text-sm">$</span>
-                        </div>
-                        <input
-                          type="number"
-                          id="productPrice"
-                          step="0.01"
-                          min="0.01"
-                          value={price}
-                          onChange={(e) => setPrice(e.target.value)}
-                          required
-                          className="pl-7 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="productCost" className="font-medium text-gray-700">
-                        Costo ($)
-                      </label>
-                      <div className="relative mt-1">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <span className="text-gray-500 sm:text-sm">$</span>
-                        </div>
-                        <input
-                          type="number"
-                          id="productCost"
-                          step="0.01"
-                          min="0"
-                          value={cost}
-                          onChange={(e) => setCost(e.target.value)}
-                          className="pl-7 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="productQuantity" className="font-medium text-gray-700">
-                        Cantidad Disponible*
-                      </label>
-                      <input
-                        type="number"
-                        id="productQuantity"
-                        min="0"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        required
-                        className="mt-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0"
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="productMinStock" className="font-medium text-gray-700">
-                        Stock Mínimo*
-                      </label>
-                      <input
-                        type="number"
-                        id="productMinStock"
-                        min="0"
-                        value={minStock}
-                        onChange={(e) => setMinStock(e.target.value)}
-                        required
-                        className="mt-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="5"
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor="productSupplier" className="font-medium text-gray-700">
-                        Proveedor
-                      </label>
-                      <input
-                        type="text"
-                        id="productSupplier"
-                        value={supplier}
-                        onChange={(e) => setSupplier(e.target.value)}
-                        className="mt-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Nombre del proveedor"
-                      />
-                    </div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productCost">Precio de Compra ($)</Label>
+                    <Input
+                      id="productCost"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={cost}
+                      onChange={(e) => setCost(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productPrice">Precio de Venta ($)*</Label>
+                    <Input
+                      id="productPrice"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      required
+                      placeholder="0.00"
+                    />
+                  </div>
+                  
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productQuantity">Cantidad Disponible*</Label>
+                    <Input
+                      id="productQuantity"
+                      type="number"
+                      min="0"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      required
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productMinStock">Stock Mínimo*</Label>
+                    <Input
+                      id="productMinStock"
+                      type="number"
+                      min="0"
+                      value={minStock}
+                      onChange={(e) => setMinStock(e.target.value)}
+                      required
+                      placeholder="5"
+                    />
                   </div>
                 </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                  <h4 className="text-md font-semibold text-gray-700 mb-4 flex items-center">
-                    <i className="fas fa-align-left mr-2 text-blue-500"></i>
-                    Descripción del Producto
-                  </h4>
-                  <div className="form-group">
-                    <label htmlFor="productDescription" className="font-medium text-gray-700">
-                      Descripción
-                    </label>
-                    <textarea
+                {/* Columna 3: Proveedor y descripción */}
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productSupplier">Proveedor</Label>
+                    <Select value={supplier} onValueChange={setSupplier}>
+                      <SelectTrigger id="productSupplier">
+                        <SelectValue placeholder="Seleccione proveedor..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {proveedores.length === 0 ? (
+                          <SelectItem value="" disabled>No hay proveedores</SelectItem>
+                        ) : (
+                          proveedores.map((prov) => (
+                            <SelectItem key={prov.id} value={prov.id}>{prov.nombre} ({prov.rif})</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="productDescription">Descripción</Label>
+                    <Input
                       id="productDescription"
-                      rows={3}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="mt-1 w-full focus:ring-blue-500 focus:border-blue-500"
                       placeholder="Descripción detallada del producto..."
                     />
                   </div>
                 </div>
               </div>
-
-              <div className="mt-8 pt-5 border-t border-gray-200 flex justify-between">
+              <DialogFooter className="flex flex-row justify-between gap-2 pt-8 border-t border-gray-200 mt-8">
                 <div className="flex space-x-3">
-                  <Button type="submit" variant="yellow" className="px-6">
-                    <i className="fas fa-save mr-2"></i>
-                    {currentProduct ? "Actualizar" : "Guardar"}
-                  </Button>
-                  <Button type="button" onClick={toggleForm} variant="outline" className="border-gray-300">
-                    <i className="fas fa-arrow-left mr-2"></i>Volver
+                  <Button type="submit" variant="yellow" className="px-6 min-h-[48px] text-base flex items-center gap-2" disabled={loading}>
+                    {loading ? (
+                      <span className="flex items-center"><Plus className="w-4 h-4 animate-spin" />Guardando...</span>
+                    ) : (
+                      <><Plus className="w-4 h-4" />Guardar</>
+                    )}
                   </Button>
                 </div>
-                <Button type="button" onClick={toggleForm} variant="destructive" size="sm">
-                  <i className="fas fa-times mr-2"></i>Salir
-                </Button>
-              </div>
+                <DialogClose asChild>
+                  <Button type="button" variant="destructive" size="sm" className="min-h-[48px] text-base flex items-center gap-2">
+                    <Trash2 className="w-4 h-4" />Cancelar
+                  </Button>
+                </DialogClose>
+              </DialogFooter>
             </form>
-          </div>
-        )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de información de producto */}
+        <Dialog open={infoDialogOpen} onOpenChange={setInfoDialogOpen}>
+          <DialogContent className="max-w-lg w-full">
+            <DialogHeader>
+              <DialogTitle>Información del Producto</DialogTitle>
+              <DialogDescription>
+                Detalles completos del producto seleccionado.
+              </DialogDescription>
+            </DialogHeader>
+            {infoProduct && (
+              <div className="space-y-2">
+                <div><span className="font-semibold">Nombre:</span> {infoProduct.nombre}</div>
+                <div><span className="font-semibold">Descripción:</span> {infoProduct.descripcion || '-'}</div>
+                <div><span className="font-semibold">Categoría:</span> {categorias.find(c => c.id === infoProduct.id_categoria)?.nombre || infoProduct.id_categoria}</div>
+                <div><span className="font-semibold">Servicio Asociado:</span> {servicios.find(s => s.id === infoProduct.id_tipo_servicio)?.nombre || '-'}</div>
+                <div><span className="font-semibold">Precio de Venta:</span> ${Number(infoProduct.precio_venta).toFixed(2)}</div>
+                <div><span className="font-semibold">Costo:</span> ${Number(infoProduct.costo).toFixed(2)}</div>
+                <div><span className="font-semibold">Cantidad Disponible:</span> {infoProduct.cantidad_disponible}</div>
+                <div><span className="font-semibold">Stock Mínimo:</span> {infoProduct.stock_minimo}</div>
+                <div><span className="font-semibold">Proveedor:</span> {proveedores.find(p => p.id === infoProduct.id_proveedor)?.nombre || '-'}</div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setInfoDialogOpen(false)} variant="yellow">Cerrar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de confirmación de borrado */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>¿Estás seguro de eliminar este producto?</DialogTitle>
+              <DialogDescription>
+                Esta acción no se puede deshacer. El producto será eliminado permanentemente.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  if (deleteProductId) {
+                    await deleteProduct(deleteProductId)
+                    setDeleteDialogOpen(false)
+                    setDeleteProductId(null)
+                  }
+                }}
+              >
+                Eliminar
+              </Button>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                  Cancelar
+                </Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Products Table */}
         <div className="mt-6">
-          <h3 className="text-lg font-bold mb-3">Total de Productos en Inventario ({filteredProducts.length})</h3>
+          <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+            <Package className="w-5 h-5 text-yellow-500" /> Total de Productos en Inventario ({filteredProducts.length})
+          </h3>
           <div className="overflow-x-auto">
-            <table className="min-w-full bg-white border">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="py-2 px-4 border">Producto</th>
-                  <th className="py-2 px-4 border">Categoría</th>
-                  <th className="py-2 px-4 border">Precio ($)</th>
-                  <th className="py-2 px-4 border">Stock</th>
-                  <th className="py-2 px-4 border">Min. Stock</th>
-                  <th className="py-2 px-4 border">Proveedor</th>
-                  <th className="py-2 px-4 border">Servicio</th>
-                  <th className="py-2 px-4 border">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Precio ($)</TableHead>
+                  <TableHead>Stock</TableHead>
+                  <TableHead>Min. Stock</TableHead>
+                  {/* <TableHead>Proveedor</TableHead> */}
+                  <TableHead>Servicio</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filteredProducts.length > 0 ? (
                   filteredProducts.map((product) => {
-                    const isLowStock = product.quantity <= product.minStock
-
+                    const isLowStock = Number(product.cantidad_disponible) <= Number(product.stock_minimo)
                     return (
-                      <tr key={product.id} className={isLowStock ? "bg-red-50 border-red-200" : ""}>
-                        <td className="py-2 px-4 border">
+                      <TableRow key={product.id} className={isLowStock ? "bg-red-50 border-red-200" : ""}>
+                        <TableCell>
                           <div>
-                            <div className="font-semibold">{product.name}</div>
-                            {product.description && <div className="text-xs text-gray-500">{product.description}</div>}
+                            <div className="font-semibold flex items-center gap-2">
+                              {isLowStock && <AlertTriangle className="w-4 h-4 text-red-500" />}
+                              {product.nombre}
+                            </div>
+                            {product.descripcion && <div className="text-xs text-gray-500">{product.descripcion}</div>}
                           </div>
-                        </td>
-                        <td className="py-2 px-4 border">{product.category}</td>
-                        <td className="py-2 px-4 border">${product.price.toFixed(2)}</td>
-                        <td className="py-2 px-4 border">
-                          <div className="flex items-center">
-                            <span className={isLowStock ? "text-red-600 font-bold" : ""}>{product.quantity}</span>
-                            {isLowStock && <i className="fas fa-exclamation-triangle text-red-500 ml-2"></i>}
-                          </div>
-                        </td>
-                        <td className="py-2 px-4 border">{product.minStock}</td>
-                        <td className="py-2 px-4 border">{product.supplier || "-"}</td>
-                        <td className="py-2 px-4 border">{product.associatedService || "-"}</td>
-                        <td className="py-2 px-4 border">
+                        </TableCell>
+                        <TableCell>{product.id_categoria}</TableCell>
+                        <TableCell>${Number(product.precio_venta).toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Badge variant={isLowStock ? "destructive" : "outline"}>{product.cantidad_disponible}</Badge>
+                        </TableCell>
+                        <TableCell>{product.stock_minimo}</TableCell>
+                        {/* <TableCell>{
+                          proveedores.find((prov) => prov.id === product.id_proveedor)?.nombre || "-"
+                        }</TableCell> */}
+                        <TableCell>{
+                          servicios.find(s => s.id === product.id_tipo_servicio)?.nombre || "-"
+                        }</TableCell>
+                        <TableCell>
                           <div className="flex flex-wrap gap-1">
                             <Button
                               onClick={() => adjustStock(product.id, 1)}
-                              variant="default"
-                              size="sm"
+                              variant="outline"
+                              size="icon"
                               title="Agregar 1 unidad"
                             >
-                              <i className="fas fa-plus"></i>
+                              <Plus className="w-4 h-4" />
                             </Button>
                             <Button
                               onClick={() => adjustStock(product.id, -1)}
                               variant="outline"
-                              size="sm"
+                              size="icon"
                               title="Quitar 1 unidad"
                             >
-                              <i className="fas fa-minus"></i>
+                              <Minus className="w-4 h-4" />
                             </Button>
-                            <Button onClick={() => editProduct(product)} variant="yellow" size="sm">
-                              <i className="fas fa-edit"></i>
+                            <Button onClick={() => editProduct(product)} variant="secondary" size="icon" title="Editar">
+                              <Edit className="w-4 h-4 text-yellow-600" />
                             </Button>
-                            <Button onClick={() => deleteProduct(product.id)} variant="destructive" size="sm">
-                              <i className="fas fa-trash"></i>
+                            <Button onClick={() => { setDeleteProductId(product.id); setDeleteDialogOpen(true) }} variant="destructive" size="icon" title="Eliminar">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                            <Button onClick={() => { setInfoProduct(product); setInfoDialogOpen(true) }} variant="outline" size="icon" title="Ver información">
+                              <Eye className="w-4 h-4 text-blue-600" />
                             </Button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )
                   })
                 ) : (
-                  <tr>
-                    <td colSpan={8} className="py-4 text-center text-gray-500">
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-4 text-center text-gray-500">
                       No hay productos que coincidan con los filtros
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       </Card>

@@ -7,6 +7,7 @@ interface ServicePrintSheetProps {
   client: any
   vehicle: any
   employee: any
+  pagos?: any[]
   onClose: () => void
   printType?: "complete" | "client"
 }
@@ -16,6 +17,7 @@ export default function ServicePrintSheet({
   client,
   vehicle,
   employee,
+  pagos = [],
   onClose,
   printType = "complete",
 }: ServicePrintSheetProps) {
@@ -34,15 +36,17 @@ export default function ServicePrintSheet({
     }
   }
 
+  // Flag para bloquear la UI durante la impresión (opcional, por si quieres deshabilitar botones)
+  // const [printing, setPrinting] = useState(false)
+
   const handlePrint = (type: "complete" | "client") => {
-    try {
-      printInNewWindow(type)
-    } catch (error) {
-      console.error("Error al imprimir:", error)
-      setTimeout(() => {
-        window.print()
-      }, 500)
+    // Cierra el modal automáticamente después de imprimir o guardar PDF
+    const onAfterPrint = () => {
+      window.removeEventListener('afterprint', onAfterPrint)
+      onClose()
     }
+    window.addEventListener('afterprint', onAfterPrint)
+    printInNewWindow(type)
   }
 
   const printInNewWindow = (type: "complete" | "client") => {
@@ -291,6 +295,38 @@ export default function ServicePrintSheet({
   }
 
   const generatePrintContent = () => {
+    // Tabla de pagos
+    const pagosTable = pagos && pagos.length > 0 ? `
+      <div class="services-section">
+        <div class="section-title">PAGOS REGISTRADOS</div>
+        <table class="services-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Método</th>
+              <th>Monto</th>
+              <th>Referencia</th>
+              <th>Observaciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pagos
+              .map(
+                (p: any) => `
+                  <tr>
+                    <td>${formatDate(p.fecha_pago)}</td>
+                    <td>${p.metodo_pago || "-"}</td>
+                    <td>$${Number(p.monto || 0).toFixed(2)}</td>
+                    <td>${p.referencia || "-"}</td>
+                    <td>${p.observaciones || ""}</td>
+                  </tr>
+                `
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    ` : '';
     return `
       <div class="print-sheet">
         <!-- Header con Logo Centrado -->
@@ -446,9 +482,12 @@ export default function ServicePrintSheet({
         <div class="observations-section">
           <div class="observations-title">OBSERVACIONES</div>
           <div class="observations-content">
-            ${service.notes || ""}
+            ${service.notes || service.observaciones || ""}
           </div>
         </div>
+
+        <!-- Pagos -->
+        ${pagosTable}
 
         <!-- Firma del Cliente -->
         <div class="signature-section">

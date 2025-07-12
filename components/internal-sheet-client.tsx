@@ -9,7 +9,7 @@ interface InternalInvoiceProps {
   onClose: () => void;
 }
 
-export default function InternalInvoice({ service, client, vehicle, pagos = [], employee, onClose }: InternalInvoiceProps) {
+export default function InternalSheetClient({ service, client, vehicle, pagos = [], employee, onClose }: InternalInvoiceProps) {
   // Normalización de datos para compatibilidad con la plantilla
   const cliente = client || {};
   const vehic = vehicle || {};
@@ -219,7 +219,7 @@ export default function InternalInvoice({ service, client, vehicle, pagos = [], 
                 <tr>
                   <th style={{ border: '1px solid #111', padding: 6, fontWeight: 'bold', background: '#f8f8f8' }}>Descripción</th>
                   <th style={{ border: '1px solid #111', padding: 6, fontWeight: 'bold', background: '#f8f8f8' }}>Cantidad</th>
-                  <th style={{ border: '1px solid #111', padding: 6, fontWeight: 'bold', background: '#f8f8f8' }}>Precio</th>
+                  {/* <th style={{ border: '1px solid #111', padding: 6, fontWeight: 'bold', background: '#f8f8f8' }}>Precio</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -227,14 +227,14 @@ export default function InternalInvoice({ service, client, vehicle, pagos = [], 
                   <tr key={idx}>
                     <td style={{ border: '1px solid #111', padding: 6 }}>{item.descripcion}</td>
                     <td style={{ border: '1px solid #111', padding: 6, textAlign: 'center' }}>{item.cantidad}</td>
-                    <td style={{ border: '1px solid #111', padding: 6, textAlign: 'right' }}>{parseFloat(item.precio).toFixed(2)}</td>
+                    {/* <td style={{ border: '1px solid #111', padding: 6, textAlign: 'right' }}>{parseFloat(item.precio).toFixed(2)}</td> */}
                   </tr>
                 ))}
                 {/* Fila de total */}
-                <tr>
+                {/* <tr>
                   <td style={{ border: '1px solid #111', padding: 6, fontWeight: 'bold', textAlign: 'right' }} colSpan={2}>TOTAL</td>
                   <td style={{ border: '1px solid #111', padding: 6, fontWeight: 'bold', textAlign: 'right' }}>{total.toFixed(2)}</td>
-                </tr>
+                </tr> */}
               </tbody>
             </table>
           </div>

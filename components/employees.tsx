@@ -1,614 +1,645 @@
 "use client"
 
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
-import type React from "react"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Trabajadores } from "@/interfaces/trabajadores.interface"
+import { addDocument, createUser, deleteDocument, getCollection, updateDocument } from "@/lib/firebase"
+import { showToast } from "nextjs-toast-notify"
 import { useEffect, useState } from "react"
-import { supabase } from "../lib/supabaseClient"
-
-interface Employee {
-  id: string
-  nombre: string
-  cargo: string
-  horario_inicio: string
-  horario_salida: string
-  estado: string
-  assignedServices?: string[]
-  createdAt: string
-}
-
-export default function Employees() {
-  const { toast } = useToast()
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [services, setServices] = useState<any[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [filterPosition, setFilterPosition] = useState("")
-
-  // Form state
-  const [nombre, setNombre] = useState("")
-  const [cargo, setCargo] = useState("")
-  const [horarioInicio, setHorarioInicio] = useState("08:00")
-  const [horarioSalida, setHorarioSalida] = useState("17:00")
-  const [estado, setEstado] = useState("activo")
-  const [assignedServiceIds, setAssignedServiceIds] = useState<string[]>([])
-
+  // Estado para el dialog de ver detalles
   
-  // Positions list
-  const positions = ["Lavador", "Detallador", "Cajero", "Supervisor", "Gerente", "Administrativo", "Otro"]
+  
+  
+  export default function Employees() {
+  const [viewDialog, setViewDialog] = useState<{ open: boolean, trabajador: Trabajadores | null }>({ open: false, trabajador: null })
+  
+
+
+
+  const [trabajadores, setTrabajadores] = useState<Trabajadores[]>([])
+  
+  const [loading, setLoading] = useState(false)
+  const [openDialog, setOpenDialog] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  // Campos del formulario
+  const [cedula, setCedula] = useState("")
+  const [nombre, setNombre] = useState("")
+  const [cargo] = useState("TRABAJADOR")
+  const [horarioInicio, setHorarioInicio] = useState("")
+  const [horarioSalida, setHorarioSalida] = useState("")
+  const [estado, setEstado] = useState(true)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  // Campos para registro de horario diario
+  const [horarioDia, setHorarioDia] = useState<{ fecha: string, entrada: string, salida: string }[]>([])
+
+  // Búsqueda y filtro
+  const [searchTerm, setSearchTerm] = useState("")
+  // const [filterCargo, setFilterCargo] = useState("")
+
+  // Cargos de ejemplo
+  // const cargos = ["Administrador", "Mecánico", "Recepcionista", "Otro"]
+
+  // Obtener trabajadores de Firebase
+  const fetchTrabajadores = async () => {
+    setLoading(true)
+    const data = await getCollection("trabajadores")
+    setTrabajadores(data as Trabajadores[])
+    setLoading(false)
+  }
 
   useEffect(() => {
-    refreshEmployees()
+    fetchTrabajadores()
   }, [])
 
-  const refreshEmployees = async () => {
-    try {
-      const { data: employeesData, error: employeesError } = await supabase.from("empleados").select("*")
-      const { data: servicesData, error: servicesError } = await supabase.from("servicios").select("*")
-      if (employeesError) throw employeesError
-      if (servicesError) throw servicesError
+  // Filtrado
+  const trabajadoresFiltrados = trabajadores.filter(t => {
+    const matchNombre = t.nombre?.toLowerCase().includes(searchTerm.toLowerCase())
+    return matchNombre
+  })
 
-      // Adaptar los datos a la interfaz Employee
-      const validatedEmployees = employeesData?.map((emp: any) => ({
-        id: emp.id,
-        nombre: emp.nombre,
-        cargo: emp.cargo,
-        horario_inicio: emp.horario_inicio || "08:00",
-        horario_salida: emp.horario_salida || "17:00",
-        estado: emp.estado || "activo",
-        assignedServices: emp.assignedServices || [],
-        createdAt: emp.created_at || "",
-      })) || []
-
-      // Get today's services
-      const today = new Date().toDateString()
-      const todayServices = (servicesData || []).filter((service: any) => {
-        const serviceDate = new Date(service.createdAt).toDateString()
-        return serviceDate === today
-      })
-
-      setEmployees(validatedEmployees)
-      setServices(todayServices)
-
-      // Si tienes una tabla de asistencia, aquí deberías cargarla desde supabase
-      // setAttendanceRecords(...)
-    } catch (error) {
-      console.error("Error refreshing employees:", error)
-      setEmployees([])
-      setServices([])
-    }
-  }
-
-  const toggleForm = () => {
-    setShowForm(!showForm)
-    if (!showForm) {
-      resetForm()
-    }
-  }
-
+  // Limpiar formulario
   const resetForm = () => {
-    setCurrentEmployee(null)
+    setCedula("")
     setNombre("")
-    setCargo("")
-    setHorarioInicio("08:00")
-    setHorarioSalida("17:00")
-    setEstado("activo")
-    setAssignedServiceIds([])
+    setHorarioInicio("")
+    setHorarioSalida("")
+    setEstado(true)
+    setEmail("")
+    setPassword("")
+    setHorarioDia([])
+    setEditId(null)
   }
 
-  const validateForm = (): boolean => {
-    if (!nombre.trim()) {
-      toast({
-        title: "Error",
-        description: "El nombre del trabajador es obligatorio",
-        variant: "destructive",
-      })
-      return false
+  // Guardar trabajador
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    // Validación de horarios y duplicados
+    if (!nombre.trim() || !cedula.trim() || !email.trim() || !password.trim()) {
+      setLoading(false)
+      return
     }
-    if (!cargo) {
-      toast({
-        title: "Error",
-        description: "El cargo es obligatorio",
-        variant: "destructive",
-      })
-      return false
+    // Validar duplicados (cedula y email)
+    const cedulaExistente = trabajadores.some(t => t.cedula === cedula.trim() && t.id !== editId)
+    if (cedulaExistente) {
+      showToast.error("Ya existe un trabajador con esa cédula.")
+      setLoading(false)
+      return
     }
-    if (!horarioInicio) {
-      toast({
-        title: "Error",
-        description: "La hora de llegada es obligatoria",
-        variant: "destructive",
-      })
-      return false
+    const emailExistente = trabajadores.some(t => t.email === email.trim() && t.id !== editId)
+    if (emailExistente) {
+      showToast.error("Ya existe un trabajador con ese correo electrónico.")
+      setLoading(false)
+      return
     }
-    if (!horarioSalida) {
-      toast({
-        title: "Error",
-        description: "La hora de salida es obligatoria",
-        variant: "destructive",
-      })
-      return false
+    if (!horarioInicio || !horarioSalida) {
+      showToast.error("Debes ingresar horario de entrada y salida.")
+      setLoading(false)
+      return
     }
     if (horarioInicio >= horarioSalida) {
-      toast({
-        title: "Error",
-        description: "La hora de salida debe ser posterior a la hora de llegada",
-        variant: "destructive",
-      })
-      return false
+      showToast.error("La hora de entrada debe ser menor que la de salida.")
+      setLoading(false)
+      return
     }
-    return true
+    const trabajador: Omit<Trabajadores, "id" | "created_at"> & { horarioDia: any[] } = {
+      cedula: cedula.trim(),
+      nombre: nombre.trim(),
+      cargo: "TRABAJADOR",
+      horario_inicio: horarioInicio,
+      horario_salida: horarioSalida,
+      estado,
+      rol: "TRABAJADOR",
+      email: email.trim(),
+      password: password.trim(),
+      check_in: false,
+      check_out: false,
+      horarioDia,
+    }
+    try {
+      if (editId) {
+        await updateDocument(`trabajadores/${editId}`, trabajador)
+        showToast.success("Trabajador actualizado correctamente.")
+      } else {
+        // Crear usuario en Firebase Auth
+        try {
+          await createUser({ email: trabajador.email, password: trabajador.password })
+        } catch (authError: any) {
+          if (authError.code === "auth/email-already-in-use") {
+            showToast.error("El correo ya está registrado en autenticación.")
+            setLoading(false)
+            return
+          } else {
+            showToast.error("Error al crear usuario en autenticación.")
+            setLoading(false)
+            return
+          }
+        }
+        await addDocument("trabajadores", trabajador)
+        showToast.success("Trabajador agregado correctamente.")
+      }
+      resetForm()
+      setOpenDialog(false)
+      await fetchTrabajadores()
+    } catch (error) {
+      showToast.error("Ocurrió un error al guardar el trabajador.")
+    } finally {
+      setLoading(false)
+    }
   }
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-  if (!validateForm()) return
-  try {
-    if (currentEmployee) {
-      // Update solo con los campos válidos
-      const { error } = await supabase.from("empleados").update({
-        nombre: nombre.trim(),
-        cargo,
-        horario_inicio: horarioInicio,
-        horario_salida: horarioSalida,
-        estado,
-      }).eq("id", currentEmployee.id)
-      if (error) throw error
-      toast({
-        title: "Actualizado",
-        description: "Trabajador actualizado exitosamente",
-        variant: "success",
-      })
+  // Editar trabajador
+  const handleEdit = (trab: Trabajadores) => {
+    setCedula(trab.cedula)
+    setNombre(trab.nombre)
+    setHorarioInicio(trab.horario_inicio)
+    setHorarioSalida(trab.horario_salida)
+    setEstado(trab.estado)
+    setEmail(trab.email)
+    setPassword(trab.password)
+    setHorarioDia((trab as any).horarioDia || [])
+    setEditId(trab.id)
+    setOpenDialog(true)
+  }
+
+  // Estado para el dialog de confirmación de eliminación
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean, trabajador: Trabajadores | null }>({ open: false, trabajador: null })
+
+  // Eliminar trabajador (con confirmación y toast)
+  const handleDelete = async (trab: Trabajadores) => {
+    setDeleteDialog({ open: true, trabajador: trab })
+  }
+
+  const confirmDelete = async () => {
+    if (deleteDialog.trabajador) {
+      await deleteDocument(`trabajadores/${deleteDialog.trabajador.id}`)
+      await fetchTrabajadores()
+      showToast.success(`Trabajador eliminado correctamente.`)
+    }
+    setDeleteDialog({ open: false, trabajador: null })
+  }
+
+  // Check-in/out automático
+  const getToday = () => {
+    const today = new Date()
+    return today.toISOString().slice(0, 10)
+  }
+
+  const getCurrentTime = () => {
+    const now = new Date()
+    return now.toTimeString().slice(0, 5)
+  }
+
+  // Determina el estado de asistencia del trabajador hoy
+  const getAttendanceStatus = (trab: Trabajadores) => {
+    const today = getToday()
+    const dia = Array.isArray(trab.horarioDia) ? trab.horarioDia.find((h: any) => h.fecha === today) : undefined
+    if (!dia) return 'absent'
+    if (dia.entrada && !dia.salida) return 'working'
+    if (dia.entrada && dia.salida) return 'completed'
+    return 'absent'
+  }
+
+  // Marcar entrada (con confirmación y toast)
+  const handleCheckIn = async (trab: Trabajadores) => {
+    const today = getToday();
+    const now = getCurrentTime();
+    let horarioDia = Array.isArray(trab.horarioDia) ? [...trab.horarioDia] : [];
+    if (horarioDia.some((h: any) => h.fecha === today && h.entrada)) {
+      showToast.error(`El trabajador ya tiene un check-in hoy.`);
+      return;
+    }
+    const idx = horarioDia.findIndex((h: any) => h.fecha === today);
+    if (idx >= 0) {
+      horarioDia[idx] = { ...horarioDia[idx], entrada: now };
     } else {
-      // Insert solo con los campos válidos
-      const { error } = await supabase.from("empleados").insert({
-        nombre: nombre.trim(),
-        cargo,
-        horario_inicio: horarioInicio,
-        horario_salida: horarioSalida,
-        estado,
-      })
-      if (error) throw error
-      toast({
-        title: "Agregado",
-        description: "Trabajador agregado exitosamente",
-        variant: "success",
-      })
+      horarioDia.push({ fecha: today, entrada: now, salida: '' });
     }
-    toggleForm()
-    refreshEmployees()
-} catch (error: any) {
-  // Si error es un objeto vacío, intenta mostrar el error de Supabase
-  if (error && error.message) {
-    console.error("Error Supabase:", error.message)
-  } else {
-    console.error("Error Supabase:", error)
-  }
-  toast({
-    title: "Error",
-    description: error?.message || "No se pudo guardar el trabajador",
-    variant: "destructive",
-  })
-}
-}
-
-  const editEmployee = (employee: Employee) => {
-    setCurrentEmployee(employee)
-    setNombre(employee.nombre)
-    setCargo(employee.cargo)
-    setHorarioInicio(employee.horario_inicio)
-    setHorarioSalida(employee.horario_salida)
-    setEstado(employee.estado)
-    setAssignedServiceIds(employee.assignedServices || [])
-    setShowForm(true)
+    await updateDocument(`trabajadores/${trab.id}`, { ...trab, horarioDia, check_in: true, check_out: false });
+    showToast.success(`Entrada registrada para ${trab.nombre} a las ${now}.`);
+    fetchTrabajadores();
   }
 
-  // Si tienes una tabla de asistencia en supabase, aquí deberías guardar el registro
-  const handleCheckIn = async (employee: Employee) => {
-    toast({
-      title: "Check-in registrado",
-      description: `${employee.nombre} ha marcado entrada`,
-      variant: "success",
-    })
+  // Marcar salida (con confirmación y toast)
+  const handleCheckOut = async (trab: Trabajadores) => {
+    const today = getToday();
+    const now = getCurrentTime();
+    let horarioDia = Array.isArray(trab.horarioDia) ? [...trab.horarioDia] : [];
+    const idx = horarioDia.findIndex((h: any) => h.fecha === today);
+    if (idx >= 0 && horarioDia[idx].entrada && !horarioDia[idx].salida) {
+      horarioDia[idx] = { ...horarioDia[idx], salida: now };
+      await updateDocument(`trabajadores/${trab.id}`, { ...trab, horarioDia, check_in: false, check_out: true });
+      showToast.success(`Salida registrada para ${trab.nombre} a las ${now}.`);
+      fetchTrabajadores();
+    } else {
+      showToast.error(`Primero debe registrar la entrada.`);
+    }
   }
 
-  const handleCheckOut = async (employee: Employee) => {
-    toast({
-      title: "Check-out registrado",
-      description: `${employee.nombre} ha marcado salida`,
-      variant: "success",
-    })
-  }
+  // Estado para el dialog de confirmación
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, type: 'in' | 'out' | null, trabajador: Trabajadores | null }>({ open: false, type: null, trabajador: null })
 
-  // Dummy para la UI, deberías adaptar esto si usas asistencia en supabase
-  const getEmployeeAttendanceStatus = (employeeId: string) => {
-    return { status: "absent", checkIn: null, checkOut: null }
-  }
-
-  // Filter employees based on search and position
-  const filteredEmployees = employees.filter((employee) => {
-    const matchesSearch = employee.nombre.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesPosition = filterPosition === "" || employee.cargo === filterPosition
-    return matchesSearch && matchesPosition
-  })
-
-  // Get assigned services for an employee
-  const getAssignedServices = (employeeId: string) => {
-    return services.filter((service: any) => service.employeeId === employeeId)
-  }
+  // --- Manejo de clase dialog-open en el body para ocultar la barra flotante ---
+  useEffect(() => {
+    if (openDialog || viewDialog.open || deleteDialog.open || confirmDialog.open) {
+      document.body.classList.add("dialog-open");
+    } else {
+      document.body.classList.remove("dialog-open");
+    }
+    // Limpieza por si el componente se desmonta con un dialog abierto
+    return () => {
+      document.body.classList.remove("dialog-open");
+    };
+  }, [openDialog, viewDialog.open, deleteDialog.open, confirmDialog.open]);
 
   return (
-    <div className="space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Total Trabajadores</h3>
-            <p className="text-3xl font-bold text-yellow-600">{employees.length}</p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Presentes Hoy</h3>
-            <p className="text-3xl font-bold text-green-600">
-              {
-                employees.filter((emp) => {
-                  const status = getEmployeeAttendanceStatus(emp.id)
-                  return status.status === "working" || status.status === "completed"
-                }).length
-              }
-            </p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Trabajando Ahora</h3>
-            <p className="text-3xl font-bold text-blue-600">
-              {employees.filter((emp) => getEmployeeAttendanceStatus(emp.id).status === "working").length}
-            </p>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Servicios Asignados</h3>
-            <p className="text-3xl font-bold text-purple-600">{services.length}</p>
-          </div>
-        </Card>
-      </div>
-
-      {/* Main Employees Management */}
-      <Card className="p-4">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center space-x-4">
-            <h2 className="text-xl font-bold">Gestión de Trabajadores</h2>
-            {showForm && (
-              <div className="flex items-center text-sm text-gray-600">
-                <i className="fas fa-arrow-right mr-2"></i>
-                <span>{currentEmployee ? "Editando trabajador" : "Nuevo trabajador"}</span>
-              </div>
-            )}
-          </div>
-          <div className="flex space-x-2">
-            {showForm ? (
-              <>
-                <Button onClick={toggleForm} variant="outline">
-                  <i className="fas fa-arrow-left mr-2"></i>Volver
-                </Button>
-                <Button onClick={toggleForm} variant="destructive">
-                  <i className="fas fa-times mr-2"></i>Cancelar
-                </Button>
-              </>
-            ) : (
-              <Button onClick={toggleForm} variant="yellow">
-                <i className="fas fa-plus mr-2"></i>Nuevo Trabajador
-              </Button>
-            )}
-          </div>
+    <div className="space-y-6 px-2 sm:px-4 md:px-0">
+      {/* Gestión de Trabajadores */}
+      <Card className="p-2 sm:p-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2 sm:gap-0">
+          <h2 className="text-lg sm:text-xl font-bold">Gestión de Trabajadores</h2>
+          <Button onClick={() => setOpenDialog(true)} variant="yellow" className="w-full sm:w-auto">
+            <i className="fas fa-plus mr-2"></i>Nuevo Trabajador
+          </Button>
         </div>
-
-        {/* Search and Filter */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="form-group">
+        {/* Búsqueda y filtro */}
+        <div className="mb-4">
+          <div className="form-group flex flex-col gap-1 w-full max-w-xs">
             <label htmlFor="searchTerm">Buscar Trabajador</label>
-            <input
+            <Input
               type="text"
               id="searchTerm"
               placeholder="Buscar por nombre..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
             />
-          </div>
-          <div className="form-group">
-            <label htmlFor="filterPosition">Filtrar por Cargo</label>
-            <select id="filterPosition" value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)}>
-              <option value="">Todos los cargos</option>
-              {positions.map((pos) => (
-                <option key={pos} value={pos}>
-                  {pos}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 
-        {showForm && (
-          <div className="mb-6 form-container">
-            <form onSubmit={handleSubmit}>
-              <h3 className="form-section-header">{currentEmployee ? "Editar Trabajador" : "Nuevo Trabajador"}</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="form-group">
-                  <label htmlFor="employeeName">Nombre Completo*</label>
-                  <input
-                    type="text"
-                    id="employeeName"
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    required
-                    placeholder="Ej: Juan Pérez"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="employeePosition">Cargo*</label>
-                  <select id="employeePosition" value={cargo} onChange={(e) => setCargo(e.target.value)} required>
-                    <option value="">Seleccione...</option>
-                    {positions.map((pos) => (
-                      <option key={pos} value={pos}>
-                        {pos}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="employeeStartTime">Hora de Llegada*</label>
-                  <input
-                    type="time"
-                    id="employeeStartTime"
-                    value={horarioInicio}
-                    onChange={(e) => setHorarioInicio(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="employeeEndTime">Hora de Salida*</label>
-                  <input
-                    type="time"
-                    id="employeeEndTime"
-                    value={horarioSalida}
-                    onChange={(e) => setHorarioSalida(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="employeeEstado">Estado*</label>
-                  <select id="employeeEstado" value={estado} onChange={(e) => setEstado(e.target.value)} required>
-                    <option value="activo">Activo</option>
-                    <option value="inactivo">Inactivo</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Services Assignment Section */}
-              {services.length > 0 && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-semibold mb-2">Servicios Asignados Hoy</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {services.map((service) => {
-                      const isAssigned = assignedServiceIds.includes(service.id)
-                      return (
-                        <div key={service.id} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`service-${service.id}`}
-                            checked={isAssigned}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setAssignedServiceIds([...assignedServiceIds, service.id])
-                              } else {
-                                setAssignedServiceIds(assignedServiceIds.filter((id) => id !== service.id))
-                              }
-                            }}
-                          />
-                          <label htmlFor={`service-${service.id}`} className="text-sm">
-                            {service.typeName || "Servicio"} - {service.status}
-                          </label>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="form-group flex justify-between mt-4">
-                <div className="flex space-x-4">
-                  <Button type="submit" variant="yellow">
-                    <i className="fas fa-save mr-2"></i>
-                    {currentEmployee ? "Actualizar" : "Guardar"}
-                  </Button>
-                  <Button type="button" onClick={toggleForm} variant="outline">
-                    <i className="fas fa-arrow-left mr-2"></i>Volver a la Lista
-                  </Button>
-                </div>
-                <Button type="button" onClick={toggleForm} variant="destructive">
-                  <i className="fas fa-times mr-2"></i>Salir
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Employees Table */}
+        {/* Tabla de empleados con shadcn/ui Table */}
         <div className="mt-6">
-          <h3 className="text-lg font-bold mb-3">Lista de Trabajadores ({filteredEmployees.length})</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-white border">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="py-2 px-4 border">Nombre</th>
-                  <th className="py-2 px-4 border">Cargo</th>
-                  <th className="py-2 px-4 border">Horario</th>
-                  <th className="py-2 px-4 border">Estado</th>
-                  <th className="py-2 px-4 border">Check-in/out</th>
-                  <th className="py-2 px-4 border">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEmployees.length > 0 ? (
-                  filteredEmployees.map((employee) => {
-                    const assignedServices = getAssignedServices(employee.id)
-                    const attendanceStatus = getEmployeeAttendanceStatus(employee.id)
-
+          <h3 className="text-base sm:text-lg font-bold mb-3">Lista de Trabajadores ({trabajadoresFiltrados.length})</h3>
+          <div className="overflow-x-auto rounded-md border border-gray-200">
+            <Table className="min-w-[600px] text-xs sm:text-sm">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Cargo</TableHead>
+                  <TableHead>Horario</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Check-in/out</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {trabajadoresFiltrados.length > 0 ? (
+                  trabajadoresFiltrados.map((trab) => {
+                    const attendance = getAttendanceStatus(trab)
                     return (
-                      <tr key={employee.id}>
-                        <td className="py-2 px-4 border font-medium">{employee.nombre}</td>
-                        <td className="py-2 px-4 border">
-                          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
-                            {employee.cargo}
+                      <TableRow key={trab.id}>
+                        <TableCell className="font-medium max-w-[120px] truncate">{trab.nombre}</TableCell>
+                        <TableCell>
+                          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs whitespace-nowrap">
+                            {trab.cargo}
                           </span>
-                        </td>
-                        <td className="py-2 px-4 border">
-                          <div className="flex items-center">
-                            <i className="fas fa-clock text-gray-400 mr-2"></i>
-                            <span>
-                              {employee.horario_inicio} - {employee.horario_salida}
-                            </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <i className="fas fa-clock text-gray-400"></i>
+                            <span className="whitespace-nowrap">{trab.horario_inicio} - {trab.horario_salida}</span>
                           </div>
-                        </td>
-                        <td className="py-2 px-4 border">
-                          <span className={`px-2 py-1 rounded-full text-xs ${employee.estado === "activo" ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"}`}>
-                            {employee.estado}
+                        </TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${trab.estado ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"}`}>
+                            {trab.estado ? "Activo" : "Inactivo"}
                           </span>
-                        </td>
-                        <td className="py-2 px-4 border">
-                          <div className="flex flex-col gap-1">
-                            {attendanceStatus.status === "absent" && (
-                              <Button
-                                onClick={() => handleCheckIn(employee)}
-                                variant="default"
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                <i className="fas fa-sign-in-alt mr-1"></i>Check-in
-                              </Button>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1 min-w-[110px]">
+                            {attendance === 'absent' && (
+                              <AlertDialog open={confirmDialog.open && confirmDialog.trabajador?.id === trab.id && confirmDialog.type === 'in'} onOpenChange={open => setConfirmDialog(open ? { open: true, type: 'in', trabajador: trab } : { open: false, type: null, trabajador: null })}>
+                                <AlertDialogTrigger asChild>
+                                  <Button onClick={() => setConfirmDialog({ open: true, type: 'in', trabajador: trab })} variant="default" size="sm" className="bg-green-600 hover:bg-green-700">
+                                    <i className="fas fa-sign-in-alt mr-1"></i>Check-in
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>¿Confirmar Check-in?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      ¿Deseas registrar la entrada de <b>{trab.nombre}</b> ahora?
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction onClick={async () => { await handleCheckIn(trab); setConfirmDialog({ open: false, type: null, trabajador: null }) }}>Confirmar</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             )}
-                            {attendanceStatus.status === "working" && (
-                              <Button onClick={() => handleCheckOut(employee)} variant="destructive" size="sm">
-                                <i className="fas fa-sign-out-alt mr-1"></i>Check-out
-                              </Button>
+                            {attendance === 'working' && (
+                              <AlertDialog open={confirmDialog.open && confirmDialog.trabajador?.id === trab.id && confirmDialog.type === 'out'} onOpenChange={open => setConfirmDialog(open ? { open: true, type: 'out', trabajador: trab } : { open: false, type: null, trabajador: null })}>
+                                <AlertDialogTrigger asChild>
+                                  <Button onClick={() => setConfirmDialog({ open: true, type: 'out', trabajador: trab })} variant="destructive" size="sm">
+                                    <i className="fas fa-sign-out-alt mr-1"></i>Check-out
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>¿Confirmar Check-out?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      ¿Deseas registrar la salida de <b>{trab.nombre}</b> ahora?
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction onClick={async () => { await handleCheckOut(trab); setConfirmDialog({ open: false, type: null, trabajador: null }) }}>Confirmar</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             )}
-                            {attendanceStatus.status === "completed" && (
+                            {attendance === 'completed' && (
                               <span className="text-green-600 text-xs font-medium">
                                 <i className="fas fa-check mr-1"></i>Completo
                               </span>
                             )}
                           </div>
-                        </td>
-                        <td className="py-2 px-4 border">
-                          <div className="flex flex-wrap gap-1">
-                            <Button onClick={() => editEmployee(employee)} variant="yellow" size="sm">
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col sm:flex-row flex-wrap gap-1 w-full">
+                            <Button onClick={() => setViewDialog({ open: true, trabajador: trab })} variant="outline" size="sm" className="w-full sm:w-auto">
+                              <i className="fas fa-eye mr-1"></i>Ver
+                            </Button>
+                            <Button onClick={() => handleEdit(trab)} variant="yellow" size="sm" className="w-full sm:w-auto">
                               <i className="fas fa-edit mr-1"></i>Editar
                             </Button>
+                            <Button onClick={() => handleDelete(trab)} variant="destructive" size="sm" className="w-full sm:w-auto">
+                              <i className="fas fa-trash mr-1"></i>Eliminar
+                            </Button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )
                   })
                 ) : (
-                  <tr>
-                    <td colSpan={6} className="py-4 text-center text-gray-500">
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-4 text-center text-gray-500">
                       No hay empleados que coincidan con los filtros
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
+      {/* Dialogo para ver detalles del trabajador */}
+      <Dialog open={viewDialog.open} onOpenChange={open => setViewDialog(open ? viewDialog : { open: false, trabajador: null })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Datos del Trabajador</DialogTitle>
+            <DialogDescription>
+              Visualiza la información completa del trabajador seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          {viewDialog.trabajador && (
+            <div className="space-y-2">
+              <div><b>Nombre:</b> {viewDialog.trabajador.nombre}</div>
+              <div><b>Cédula:</b> {viewDialog.trabajador.cedula}</div>
+              <div><b>Email:</b> {viewDialog.trabajador.email}</div>
+              <div><b>Cargo:</b> {viewDialog.trabajador.cargo}</div>
+              <div><b>Estado:</b> {viewDialog.trabajador.estado ? 'Activo' : 'Inactivo'}</div>
+              <div><b>Horario:</b> {viewDialog.trabajador.horario_inicio} - {viewDialog.trabajador.horario_salida}</div>
+              <div><b>Rol:</b> {viewDialog.trabajador.rol}</div>
+              {/* Puedes agregar más campos si lo deseas */}
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cerrar</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       </Card>
 
-      {/* Schedule Visualization */}
-      <Card className="p-4">
+      {/* Diálogo para agregar/editar trabajador */}
+      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+        <DialogContent className="max-w-full w-[98vw] sm:w-[500px] p-1 sm:p-6 max-h-[80dvh] sm:max-h-[90vh] overflow-y-auto mt-2 sm:mt-0">
+          <DialogHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm pt-2 pb-1 sm:pt-0 sm:pb-0">
+            <DialogTitle className="text-base sm:text-lg">{editId ? "Editar Trabajador" : "Nuevo Trabajador"}</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Complete los campos para {editId ? "editar" : "agregar un nuevo"} trabajador.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex flex-col gap-2 sm:grid sm:grid-cols-2 sm:gap-4">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="cedula" className="text-sm font-medium">Cédula</label>
+                <Input
+                  id="cedula"
+                  type="number"
+                  min={0}
+                  placeholder="Cédula"
+                  value={cedula}
+                  onChange={(e) => setCedula(e.target.value)}
+                  required
+                  className="w-full text-xs sm:text-sm py-2 sm:py-2.5"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="nombre" className="text-sm font-medium">Nombre Completo</label>
+                <Input
+                  id="nombre"
+                  type="text"
+                  placeholder="Nombre Completo"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  required
+                  className="w-full text-xs sm:text-sm py-2 sm:py-2.5"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="horarioInicio" className="text-sm font-medium">Hora de Entrada</label>
+                <Input
+                  id="horarioInicio"
+                  type="time"
+                  placeholder="Hora de Entrada"
+                  value={horarioInicio}
+                  onChange={(e) => setHorarioInicio(e.target.value)}
+                  required
+                  className="w-full text-xs sm:text-sm py-2 sm:py-2.5"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="horarioSalida" className="text-sm font-medium">Hora de Salida</label>
+                <Input
+                  id="horarioSalida"
+                  type="time"
+                  placeholder="Hora de Salida"
+                  value={horarioSalida}
+                  onChange={(e) => setHorarioSalida(e.target.value)}
+                  required
+                  className="w-full text-xs sm:text-sm py-2 sm:py-2.5"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="estado" className="text-sm font-medium">Estado</label>
+                <Select value={estado ? "activo" : "inactivo"} onValueChange={v => setEstado(v === "activo")}> 
+                  <SelectTrigger id="estado" className="w-full text-xs sm:text-sm py-2 sm:py-2.5">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="activo">Activo</SelectItem>
+                    <SelectItem value="inactivo">Inactivo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="email" className="text-sm font-medium">Email</label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full text-xs sm:text-sm py-2 sm:py-2.5"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="password" className="text-sm font-medium">Contraseña</label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full text-xs sm:text-sm py-2 sm:py-2.5"
+                />
+              </div>
+            </div>
+            {/* Horario diario (visualización solo) */}
+            <div>
+              <span className="font-semibold">Horarios diarios</span>
+              <div className="text-xs text-gray-500">El registro de horarios diarios se realiza automáticamente con Check-in/out.</div>
+            </div>
+            <DialogFooter className="flex flex-col sm:flex-row gap-2">
+              <Button type="submit" variant="yellow" disabled={loading} className="w-full sm:w-auto">
+                <i className="fas fa-save mr-2"></i>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                    Procesando...
+                  </span>
+                ) : (
+                  editId ? "Actualizar" : "Guardar"
+                )}
+              </Button>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" onClick={resetForm} className="w-full sm:w-auto">Cancelar</Button>
+              </DialogClose>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Visualización de horarios diarios */}
+      <Card className="p-2 sm:p-4">
         <CardHeader className="px-0">
-          <CardTitle>Horarios de Trabajo</CardTitle>
+          <CardTitle className="text-base sm:text-lg">Horarios de Trabajo (por día)</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           <div className="relative overflow-x-auto">
-            <div className="min-w-full bg-gray-50 p-4 rounded-lg">
-              <div className="flex border-b border-gray-200 pb-2 mb-2">
-                <div className="w-1/4 font-semibold">Trabajador</div>
-                <div className="w-3/4 flex">
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <div key={i} className="flex-1 text-center text-xs">
-                      {i + 8}:00
-                    </div>
-                  ))}
-                </div>
+            <div className="min-w-full bg-gray-50 p-2 sm:p-4 rounded-lg">
+              <div className="flex flex-col sm:flex-row border-b border-gray-200 pb-2 mb-2 gap-2 sm:gap-0">
+                <div className="w-full sm:w-1/4 font-semibold">Trabajador</div>
+                <div className="w-full sm:w-3/4 font-semibold">Horarios diarios</div>
               </div>
-
-              {filteredEmployees.map((employee) => {
-                // Verificar que horario_inicio y horario_salida existan y tengan el formato correcto
-                const hasValidTimes =
-                  employee.horario_inicio &&
-                  employee.horario_salida &&
-                  employee.horario_inicio.includes(":") &&
-                  employee.horario_salida.includes(":")
-
-                if (!hasValidTimes) {
-                  // Mostrar una barra predeterminada si los tiempos no son válidos
-                  return (
-                    <div key={employee.id} className="flex items-center h-10 mb-2">
-                      <div className="w-1/4 truncate pr-2">{employee.nombre}</div>
-                      <div className="w-3/4 relative h-6">
-                        <div
-                          className="absolute h-full bg-gray-300 rounded-md flex items-center justify-center text-xs text-black"
-                          style={{
-                            left: "0%",
-                            width: "100%",
-                          }}
-                        >
-                          Horario no definido
-                        </div>
+              {trabajadoresFiltrados.map((trab) => (
+                <div key={trab.id} className="flex flex-col sm:flex-row items-start sm:items-center h-auto mb-2 gap-2 sm:gap-0">
+                  <div className="w-full sm:w-1/4 truncate pr-2">{trab.nombre}</div>
+                  <div className="w-full sm:w-3/4 relative">
+                    {Array.isArray(trab.horarioDia) && trab.horarioDia.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {trab.horarioDia.map((h, idx) => {
+                          const hasValidTimes = h.entrada && h.salida && h.entrada.includes(":") && h.salida.includes(":")
+                          // Formatear fecha a dd/mm/yyyy
+                          let fechaFormateada = h.fecha
+                          if (h.fecha && h.fecha.includes("-")) {
+                            const [yyyy, mm, dd] = h.fecha.split("-")
+                            fechaFormateada = `${dd}/${mm}/${yyyy}`
+                          }
+                          if (!hasValidTimes) {
+                            return (
+                              <div key={idx} className="flex items-center gap-2 mb-1">
+                                <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                                <div className="bg-gray-300 rounded px-2 py-1 text-xs text-black w-full">{fechaFormateada}: Horario no definido</div>
+                              </div>
+                            )
+                          }
+                          // Timeline visual
+                          return (
+                            <div key={idx} className="flex items-center gap-2 mb-1">
+                              {/* Línea vertical */}
+                              <div className="flex flex-col items-center">
+                                <div className="w-2 h-2 rounded-full bg-yellow-500 border-2 border-yellow-700"></div>
+                                {Array.isArray(trab.horarioDia) && idx !== trab.horarioDia.length - 1 && (
+                                  <div className="w-px h-8 bg-yellow-300"></div>
+                                )}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-2 bg-yellow-100 rounded-lg px-3 py-2 shadow-sm border border-yellow-200">
+                                  <span className="font-semibold text-yellow-800 text-xs flex items-center gap-1">
+                                    <i className="fas fa-calendar-alt text-yellow-600"></i> {fechaFormateada}
+                                  </span>
+                                  <span className="text-xs text-gray-700 flex items-center gap-1">
+                                    <i className="fas fa-sign-in-alt text-green-600"></i> Entrada: <span className="font-bold">{h.entrada}</span>
+                                  </span>
+                                  <span className="text-xs text-gray-700 flex items-center gap-1">
+                                    <i className="fas fa-sign-out-alt text-red-600"></i> Salida: <span className="font-bold">{h.salida}</span>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                    </div>
-                  )
-                }
-
-                // Si los tiempos son válidos, proceder con el cálculo normal
-                const startHour = Number.parseInt(employee.horario_inicio.split(":")[0])
-                const startMinute = Number.parseInt(employee.horario_inicio.split(":")[1])
-                const endHour = Number.parseInt(employee.horario_salida.split(":")[0])
-                const endMinute = Number.parseInt(employee.horario_salida.split(":")[1])
-
-                // Calculate position and width for the schedule bar
-                const startPosition = (startHour - 8 + startMinute / 60) * (100 / 12)
-                const duration = endHour - startHour + (endMinute - startMinute) / 60
-                const width = duration * (100 / 12)
-
-                return (
-                  <div key={employee.id} className="flex items-center h-10 mb-2">
-                    <div className="w-1/4 truncate pr-2">{employee.nombre}</div>
-                    <div className="w-3/4 relative h-6">
-                      <div
-                        className="absolute h-full bg-yellow-400 rounded-md flex items-center justify-center text-xs text-black"
-                        style={{
-                          left: `${startPosition}%`,
-                          width: `${width}%`,
-                        }}
-                      >
-                        {employee.horario_inicio} - {employee.horario_salida}
-                      </div>
-                    </div>
+                    ) : (
+                      <div className="bg-gray-200 rounded-md px-2 py-1 text-xs text-gray-600">Sin horarios diarios registrados</div>
+                    )}
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           </div>
         </CardContent>
       </Card>
+      {/* Diálogo de confirmación para eliminar trabajador */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={open => setDeleteDialog(open ? deleteDialog : { open: false, trabajador: null })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar trabajador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que deseas eliminar a <b>{deleteDialog.trabajador?.nombre}</b>? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteDialog({ open: false, trabajador: null })}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
