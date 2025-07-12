@@ -51,10 +51,24 @@ export default function CashRegister() {
     loadCashRegisterData()
     loadDailyPayments()
     loadRecentMovements()
+    
+    // Escuchar eventos de actualización de caja
+    const handleCajaUpdated = (event: CustomEvent) => {
+      console.log("Evento cajaUpdated recibido:", event.detail);
+      loadCashRegisterData(); // Recargar datos de la caja
+      loadRecentMovements(); // Recargar movimientos recientes
+    };
+    
+    window.addEventListener('cajaUpdated', handleCajaUpdated as EventListener);
+    
+    return () => {
+      window.removeEventListener('cajaUpdated', handleCajaUpdated as EventListener);
+    };
   }, [])
 
   const loadCashRegisterData = async () => {
     try {
+      console.log("📊 Cargando datos de la caja...");
       const cajas = await getCollection("cajas") as Caja[]
       
       // Buscar la caja más reciente que esté abierta
@@ -63,10 +77,18 @@ export default function CashRegister() {
         .sort((a, b) => new Date(b.fecha_apertura).getTime() - new Date(a.fecha_apertura).getTime())[0]
       
       if (activeCaja) {
+        console.log("✅ Caja activa encontrada:", {
+          id: activeCaja.id,
+          monto_efectivo: activeCaja.monto_efectivo,
+          monto_inicial: activeCaja.monto_inicial
+        });
         setCurrentCaja(activeCaja)
         setIsOpen(true)
-        setCashAmount(activeCaja.monto_efectivo || activeCaja.monto_inicial || 0)
+        const efectivo = activeCaja.monto_efectivo || activeCaja.monto_inicial || 0;
+        console.log("💰 Estableciendo efectivo en caja:", efectivo);
+        setCashAmount(efectivo)
       } else {
+        console.log("❌ No se encontró caja activa");
         setIsOpen(false)
         setCashAmount(0)
         setCurrentCaja(null)

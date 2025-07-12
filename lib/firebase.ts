@@ -15,7 +15,7 @@ const firebaseConfig = {
   storageBucket: "zonagaraje-41c74.firebasestorage.app",
   messagingSenderId: "288279094036",
   appId: "1:288279094036:web:2ad1c3f4c98424db545801",
-  measurementId: "G-F13163XZZM"
+  measurementId: "G-F13163XZZM"       
 //     apiKey: "AIzaSyDimjZnErbNsJiZFYw-MlhVeZSbyMTJTvs",
 //   authDomain: "inventario-9e8d6.firebaseapp.com",
 //   projectId: "inventario-9e8d6",

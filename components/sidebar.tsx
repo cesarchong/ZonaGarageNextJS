@@ -86,9 +86,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("dashboard")}
               data-section="dashboard"
+              title={collapsed ? "Dashboard" : undefined}
             >
               <i className="fas fa-tachometer-alt"></i>
-              {!collapsed && <span className="ml-3">Dashboard</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Dashboard</span>
             </button>
           </li>
 
@@ -99,6 +100,7 @@ export default function Sidebar({
                 activeSubmenu === "services" ? "bg-gray-700" : ""
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => toggleSubmenu("services")}
+              title={collapsed ? "Servicios" : undefined}
             >
               <i className="fas fa-tools"></i>
               {!collapsed && (
@@ -150,9 +152,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("clients")}
               data-section="clients"
+              title={collapsed ? "Clientes y Vehículos" : undefined}
             >
               <i className="fas fa-users"></i>
-              {!collapsed && <span className="ml-3">Clientes y Vehículos</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Clientes y Vehículos</span>
             </button>
           </li>
 
@@ -164,9 +167,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("inventory")}
               data-section="inventory"
+              title={collapsed ? "Inventario" : undefined}
             >
               <i className="fas fa-boxes"></i>
-              {!collapsed && <span className="ml-3">Inventario</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Inventario</span>
             </button>
           </li>
 
@@ -178,9 +182,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("best-sellers")}
               data-section="best-sellers"
+              title={collapsed ? "Productos más vendidos" : undefined}
             >
               <i className="fas fa-trophy"></i>
-              {!collapsed && <span className="ml-3">Productos más vendidos</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Productos más vendidos</span>
             </button>
           </li>
 
@@ -192,9 +197,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("employees")}
               data-section="employees"
+              title={collapsed ? "Trabajadores" : undefined}
             >
               <i className="fas fa-user-gear"></i>
-              {!collapsed && <span className="ml-3">Trabajadores</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Trabajadores</span>
             </button>
           </li>
 
@@ -206,9 +212,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("categories")}
               data-section="categories"
+              title={collapsed ? "Categorías" : undefined}
             >
               <i className="fas fa-layer-group"></i>
-              {!collapsed && <span className="ml-3">Categorias</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Categorias</span>
             </button>
           </li>
 
@@ -220,9 +227,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("providers")}
               data-section="providers"
+              title={collapsed ? "Proveedores" : undefined}
             >
               <i className="fas fa-truck"></i>
-              {!collapsed && <span className="ml-3">Proveedores</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Proveedores</span>
             </button>
           </li>
 
@@ -234,9 +242,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("cash-register")}
               data-section="cash-register"
+              title={collapsed ? "Caja" : undefined}
             >
               <i className="fas fa-cash-register"></i>
-              {!collapsed && <span className="ml-3">Caja</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Caja</span>
             </button>
           </li>
 
@@ -248,9 +257,10 @@ export default function Sidebar({
               } ${collapsed ? "justify-center" : ""}`}
               onClick={() => handleSectionClick("loyalty")}
               data-section="loyalty"
+              title={collapsed ? "Sistema de Lealtad" : undefined}
             >
               <i className="fas fa-star"></i>
-              {!collapsed && <span className="ml-3">Sistema de Lealtad</span>}
+              <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Sistema de Lealtad</span>
             </button>
           </li>
 
@@ -263,9 +273,10 @@ export default function Sidebar({
                 } ${collapsed ? "justify-center" : ""}`}
                 onClick={() => handleSectionClick("reports")}
                 data-section="reports"
+                title={collapsed ? "Reportes" : undefined}
               >
                 <i className="fas fa-chart-bar"></i>
-                {!collapsed && <span className="ml-3">Reportes</span>}
+                <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Reportes</span>
               </button>
             </li>
           )}
@@ -279,9 +290,10 @@ export default function Sidebar({
                 } ${collapsed ? "justify-center" : ""}`}
                 onClick={() => handleSectionClick("admin")}
                 data-section="admin"
+                title={collapsed ? "Administración" : undefined}
               >
                 <i className="fas fa-cog"></i>
-                {!collapsed && <span className="ml-3">Administración</span>}
+                <span className={`ml-3 ${collapsed ? "hidden sm:block" : ""}`}>Administración</span>
               </button>
             </li>
           )}

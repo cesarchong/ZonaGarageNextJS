@@ -91,6 +91,8 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
       loyalty: "Lealtad",
       admin: "Admin",
       "best-sellers": "Productos más vendidos",
+      categories: "Categorías",
+      providers: "Proveedores",
     }
     return titles[section] || ""
   }
@@ -157,19 +159,32 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
               <i className="fas fa-boxes"></i>
               <span>Inventario</span>
             </button>
+            <button
+              className={`mobile-nav-button ${currentSection === "categories" ? "active" : ""}`}
+              onClick={() => handleSectionClick("categories")}
+            >
+              <i className="fas fa-layer-group"></i>
+              <span>Categorías</span>
+            </button>
+            <button
+              className={`mobile-nav-button ${currentSection === "providers" ? "active" : ""}`}
+              onClick={() => handleSectionClick("providers")}
+            >
+              <i className="fas fa-truck"></i>
+              <span>Proveedores</span>
+            </button>
             {/* Solo mostrar Personal si NO es trabajador */}
             {isTrabajador ? null : (
               <button
                 className={`mobile-nav-button ${currentSection === "employees" ? "active" : ""}`}
                 onClick={() => handleSectionClick("employees")}
               >
-                <i className="fas fa-user-hard-hat"></i>
-                <span>
-                  <i className="fas fa-users-cog mr-1"></i>
-                  Personal
-                </span>
+                <i className="fas fa-user-gear"></i>
+                <span>Personal</span>
               </button>
             )}
+          </div>
+          <div className="mobile-nav-grid mobile-nav-grid-third">
             {/* Caja siempre visible */}
             <button
               className={`mobile-nav-button ${currentSection === "cash-register" ? "active" : ""}`}
@@ -177,6 +192,13 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
             >
               <i className="fas fa-cash-register"></i>
               <span>Caja</span>
+            </button>
+            <button
+              className={`mobile-nav-button ${currentSection === "loyalty" ? "active" : ""}`}
+              onClick={() => handleSectionClick("loyalty")}
+            >
+              <i className="fas fa-star"></i>
+              <span>Lealtad</span>
             </button>
             {/* Opciones solo para ADMINISTRADOR */}
             {isAdmin && (
@@ -278,6 +300,24 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
                     <span>Productos más vendidos</span>
                   </button>
                 </li>
+                <li>
+                  <button
+                    className={`mobile-sidebar-button ${currentSection === "categories" ? "active" : ""}`}
+                    onClick={() => handleSectionClick("categories")}
+                  >
+                    <i className="fas fa-layer-group"></i>
+                    <span>Categorías</span>
+                  </button>
+                </li>
+                <li>
+                  <button
+                    className={`mobile-sidebar-button ${currentSection === "providers" ? "active" : ""}`}
+                    onClick={() => handleSectionClick("providers")}
+                  >
+                    <i className="fas fa-truck"></i>
+                    <span>Proveedores</span>
+                  </button>
+                </li>
                 {/* Solo mostrar Trabajadores si NO es trabajador */}
                 {!isTrabajador && (
                   <li>
@@ -285,7 +325,7 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
                       className={`mobile-sidebar-button ${currentSection === "employees" ? "active" : ""}`}
                       onClick={() => handleSectionClick("employees")}
                     >
-                      <i className="fas fa-user-hard-hat"></i>
+                      <i className="fas fa-user-gear"></i>
                       <span>Trabajadores</span>
                     </button>
                   </li>
@@ -403,6 +443,10 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
         }
 
         .mobile-nav-grid-second {
+          margin-top: 4px;
+        }
+
+        .mobile-nav-grid-third {
           margin-top: 4px;
         }
 

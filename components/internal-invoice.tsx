@@ -70,8 +70,15 @@ export default function InternalInvoice({ service, client, vehicle, pagos = [], 
   const printDocument = () => {
     const printContent = document.getElementById("internal-invoice-content");
     if (!printContent) return;
-    const originalContent = document.body.innerHTML;
-    // Elimina cualquier texto de resolución de hoja, localhost y encabezados automáticos de impresión del navegador
+    
+    // Crear ventana de impresión en lugar de modificar el DOM actual
+    const printWindow = window.open("", "_blank", "width=800,height=600");
+    if (!printWindow) {
+      alert("Por favor, permita ventanas emergentes para imprimir la factura");
+      return;
+    }
+
+    // Elimina cualquier texto de resolución de hoja, localhost y encabezados automáticos
     let html = printContent.outerHTML
       .replace(/Resoluci[oó]n[^<]*<br\s*\/?\s*>/gi, '')
       .replace(/localhost(:\d+)?/gi, '')
@@ -79,7 +86,8 @@ export default function InternalInvoice({ service, client, vehicle, pagos = [], 
       .replace(/\d{1,2}\/\d{1,2}\/\d{2,4},? ?\d{1,2}:\d{2} ?[ap]\.m\.?.*Zona Garaje - Sistema de Gestión/gi, '')
       .replace(/\d{1,2}\/\d{1,2}\/\d{4}.*Zona Garaje.*Sistema.*Gestión/gi, '')
       .replace(/\d{1,2}:\d{2}.*[ap]\.m\.?/gi, '');
-     const printStyles = `
+
+    const printStyles = `
       <style>
         @page {
           margin: 0.5in;
@@ -125,50 +133,33 @@ export default function InternalInvoice({ service, client, vehicle, pagos = [], 
           .footer {
             display: none !important;
           }
-          
-          /* Asegurar que solo se imprima el contenido deseado */
-          body * {
-            visibility: hidden;
-          }
-          
-          #internal-invoice-content,
-          #internal-invoice-content * {
-            visibility: visible;
-          }
-          
-          #internal-invoice-content {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-          }
         }
       </style>
     `;
-    
-    document.body.innerHTML = printStyles + html;
-     setTimeout(() => {
-      const printOptions = {
-        silent: false,
-        printBackground: true,
-        color: false,
-        margin: {
-          marginType: 'printableArea'
-        },
-        landscape: false,
-        pagesPerSheet: 1,
-        collate: false,
-        copies: 1
-      };
-      
-      window.print();
-      
-      // Restaurar el contenido original después de imprimir
-      setTimeout(() => {
-        document.body.innerHTML = originalContent;
-      }, 100);
-    }, 100);
 
+    // Escribir el HTML completo en la nueva ventana
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Factura - Zona Garaje</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        ${printStyles}
+      </head>
+      <body>
+        ${html}
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
   };
 
   return (
@@ -239,20 +230,20 @@ export default function InternalInvoice({ service, client, vehicle, pagos = [], 
             </table>
           </div>
           {/* Observaciones */}
-          <div className="mb-4">
+          <div className="mb-6" style={{ marginTop: 32 }}>
             <div style={{ fontWeight: 'bold', fontSize: 15, marginBottom: 2 }}>OBSERVACIONES DEL SERVICIO</div>
             <div style={{ border: '1px solid #111', minHeight: 60, padding: 8, fontSize: 13, color: '#222', marginBottom: 2 }}>
               {service?.observaciones || service?.notes || ''}
             </div>
             {/* Líneas punteadas extra para escribir */}
-            <div style={{ color: '#aaa', fontSize: 13, lineHeight: 2.5, marginTop: 18 }}>
-              {'-'.repeat(120)}<br />{'-'.repeat(120)}<br />{'-'.repeat(120)}
+            <div style={{ color: '#aaa', fontSize: 13, lineHeight: 2.5, marginTop: 18, textAlign: 'center' }}>
+              {'-'.repeat(160)}<br />{'-'.repeat(160)}<br />{'-'.repeat(160)}<br />{'-'.repeat(160)}<br />{'-'.repeat(160)}
             </div>
           </div>
           {/* Firma */}
-          <div className="flex flex-col items-center mt-8 mb-2">
+          <div className="flex flex-col items-center mt-8 mb-2" style={{ textAlign: 'center' }}>
             <div style={{ fontWeight: 'bold', fontSize: 15, marginBottom: 18 }}>FIRMA CLIENTE</div>
-            <div style={{ borderBottom: '2px solid #111', width: 260, height: 40 }}></div>
+            <div style={{ borderBottom: '2px solid #111', width: 260, height: 40, margin: '0 auto' }}></div>
           </div>
           {/* Nota legal */}
           <div style={{ fontSize: 11, color: '#444', textAlign: 'center', marginTop: 18 }}>

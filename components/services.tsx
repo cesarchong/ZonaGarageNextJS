@@ -121,6 +121,7 @@ import { Separator } from "@radix-ui/react-separator";
 import { Plus, Trash } from "lucide-react";
 import { showToast } from "nextjs-toast-notify";
 import { useEffect, useState } from "react";
+import { eliminarServicioCompleto, registrarPagoEnCaja } from "../lib/caja-utils";
 import BuscarClienteSection from "./BuscarClienteSection";
 import InternalInvoice from "./internal-invoice";
 import InternalSheetClient from "./internal-sheet-client";
@@ -147,6 +148,12 @@ export default function Services() {
   const [vehiculoSeleccionado, setVehiculoSeleccionado] = useState<any>(null);
   const [loadingVehiculos, setLoadingVehiculos] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  
+  // Estados para eliminación de servicios
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [servicioAEliminar, setServicioAEliminar] = useState<any>(null);
+  const [loadingDelete, setLoadingDelete] = useState(false);
+  
   const [showFormNuevoVehiculo, setShowFormNuevoVehiculo] = useState(false);
   const [nuevoVehiculo, setNuevoVehiculo] = useState({
     placa: '', marca: '', modelo: '', anio: '', color: '', tipo: '', tipo_asiento: '',
@@ -155,6 +162,19 @@ export default function Services() {
   const [loadingGuardarVehiculo, setLoadingGuardarVehiculo] = useState(false);
   const [serviciosSeleccionados, setServiciosSeleccionados] = useState<any[]>([]);
   const [showConfirmarServicio, setShowConfirmarServicio] = useState(false);
+
+  // Manejar la clase 'dialog-open' en el body para ocultar la barra flotante móvil
+  useEffect(() => {
+    const anyDialogOpen = showFactura || showHojaCliente
+    if (anyDialogOpen) {
+      document.body.classList.add("dialog-open")
+    } else {
+      document.body.classList.remove("dialog-open")
+    }
+    return () => {
+      document.body.classList.remove("dialog-open")
+    }
+  }, [showFactura, showHojaCliente])
   // Estado para flujo de nuevo cliente
   const [nuevoCliente, setNuevoCliente] = useState({
     cedula: '', nombre: '', telefono: '', email: '', direccion: '',
@@ -234,9 +254,12 @@ export default function Services() {
       setShowNewService(true);
       setShowNuevoClienteSection(false);
       setShowConfirmarServicio(false);
+
       // Limpiar formularios
       setNuevoCliente({ cedula: '', nombre: '', telefono: '', email: '', direccion: '' });
       setNuevoClienteVehiculo({ placa: '', marca: '', modelo: '', anio: '', color: '', tipo: '', tipo_asiento: '' });
+
+      showToast.success('Cliente y vehículo registrados correctamente', { duration: 3000, position: 'top-center' });
     } catch (e: any) {
       setNuevoClienteError('Error al guardar: ' + (e?.message || ''));
     } finally {
@@ -251,6 +274,63 @@ export default function Services() {
   const [servicios, setServicios] = useState<any[]>([]);
   const [loadingServicios, setLoadingServicios] = useState(false);
   const [filtroCliente, setFiltroCliente] = useState<any | null>(null); // Filtro por cliente
+
+  // Función para resetear todo el estado y volver a la vista principal
+  const resetearEstadoCompleto = () => {
+    setShowNewService(false);
+    setShowProductSale(false);
+    setFlujo(null);
+    setClienteSeleccionado(null);
+    setVehiculoSeleccionado(null);
+    setVehiculosCliente([]);
+    setServiciosSeleccionados([]);
+    setShowConfirmarServicio(false);
+    setShowNuevoClienteSection(false);
+    setShowFormNuevoVehiculo(false);
+    setShowConfirmDialog(false);
+    // Recargar servicios para mostrar los más recientes
+    cargarServicios();
+  };
+
+  // Función para cargar servicios
+  const cargarServicios = async () => {
+    setLoadingServicios(true);
+    try {
+      const [serviciosData, clientesData, vehiculosData] = await Promise.all([
+        import("../lib/firebase").then(async ({ db }) => {
+          const { getDocs, collection } = await import("firebase/firestore");
+          const snap = await getDocs(collection(db, "servicios"));
+          return snap.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+        }),
+        import("../lib/firebase").then(({ getCollection }) => getCollection("clientes")),
+        import("../lib/firebase").then(({ getCollection }) => getCollection("vehiculos")),
+      ]);
+
+      // Crear mapas de clientes y vehículos por id para acceso rápido
+      const clientesMap = new Map();
+      clientesData.forEach((c: any) => clientesMap.set(c.id, c));
+      const vehiculosMap = new Map();
+      vehiculosData.forEach((v: any) => vehiculosMap.set(v.id, v));
+
+      // Agregar el nombre del cliente y datos del vehículo a cada servicio
+      const serviciosConDatos = serviciosData.map((s: any) => {
+        const vehiculo = vehiculosMap.get(s.vehiculo_id);
+        return {
+          ...s,
+          cliente_nombre: clientesMap.get(s.cliente_id)?.nombre || s.cliente_id,
+          vehiculo_placa: vehiculo?.placa || s.vehiculo_id,
+          vehiculo_marca: vehiculo?.marca || '',
+          vehiculo_modelo: vehiculo?.modelo || '',
+        };
+      });
+
+      setServicios(serviciosConDatos.sort((a, b) => new Date(b.fecha_servicio).getTime() - new Date(a.fecha_servicio).getTime()));
+    } catch (error) {
+      console.error("Error al cargar servicios:", error);
+    } finally {
+      setLoadingServicios(false);
+    }
+  };
   // Estado para edición de observación
   const [editObsId, setEditObsId] = useState<string | null>(null);
   const [editObsValue, setEditObsValue] = useState("");
@@ -349,35 +429,7 @@ export default function Services() {
 
   // Cargar servicios, clientes y vehículos al montar
   useEffect(() => {
-    setLoadingServicios(true);
-    Promise.all([
-      import("../lib/firebase").then(async ({ db }) => {
-        const { getDocs, collection } = await import("firebase/firestore");
-        const snap = await getDocs(collection(db, "servicios"));
-        return snap.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
-      }),
-      import("../lib/firebase").then(({ getCollection }) => getCollection("clientes")),
-      import("../lib/firebase").then(({ getCollection }) => getCollection("vehiculos")),
-    ]).then(([serviciosData, clientesData, vehiculosData]) => {
-      // Crear mapas de clientes y vehículos por id para acceso rápido
-      const clientesMap = new Map();
-      clientesData.forEach((c: any) => clientesMap.set(c.id, c));
-      const vehiculosMap = new Map();
-      vehiculosData.forEach((v: any) => vehiculosMap.set(v.id, v));
-      // Agregar el nombre del cliente y datos del vehículo a cada servicio
-      const serviciosConDatos = serviciosData.map((s: any) => {
-        const vehiculo = vehiculosMap.get(s.vehiculo_id);
-        return {
-          ...s,
-          cliente_nombre: clientesMap.get(s.cliente_id)?.nombre || s.cliente_id,
-          vehiculo_placa: vehiculo?.placa || s.vehiculo_id,
-          vehiculo_marca: vehiculo?.marca || '',
-          vehiculo_modelo: vehiculo?.modelo || '',
-        };
-      });
-      setServicios(serviciosConDatos.sort((a, b) => new Date(b.fecha_servicio).getTime() - new Date(a.fecha_servicio).getTime()));
-      setLoadingServicios(false);
-    }).catch(() => setLoadingServicios(false));
+    cargarServicios();
   }, []);
 
   // Función para abrir la factura
@@ -464,8 +516,41 @@ export default function Services() {
     }
   };
 
+  // Función para confirmar eliminación de servicio
+  const handleConfirmarEliminacion = (servicio: any) => {
+    setServicioAEliminar(servicio);
+    setShowDeleteDialog(true);
+  };
+
+  // Función para eliminar servicio completo
+  const handleEliminarServicio = async () => {
+    if (!servicioAEliminar) return;
+    
+    setLoadingDelete(true);
+    try {
+      // Usar el firestoreId (ID principal) para eliminar el servicio
+      const firestoreId = servicioAEliminar.firestoreId;
+      if (!firestoreId) {
+        throw new Error("No se encontró el ID principal de Firestore para este servicio");
+      }
+      
+      await eliminarServicioCompleto(firestoreId);
+      
+      // Actualizar la lista de servicios localmente usando el firestoreId
+      setServicios(prev => prev.filter(s => s.firestoreId !== firestoreId));
+      
+      showToast.success("Servicio eliminado correctamente. Se han revertido todos los cambios en inventario y caja.");
+      setShowDeleteDialog(false);
+      setServicioAEliminar(null);
+    } catch (error: any) {
+      showToast.error("Error al eliminar el servicio: " + (error?.message || "Error desconocido"));
+    } finally {
+      setLoadingDelete(false);
+    }
+  };
+
   if (showProductSale) {
-  return <ProductSaleSection onBack={() => setShowProductSale(false)} />;
+  return <ProductSaleSection onBack={() => setShowProductSale(false)} onComplete={resetearEstadoCompleto} />;
 }
 
   // --- RENDER FLUJOS ---
@@ -680,7 +765,7 @@ export default function Services() {
     }
     // Sección 5: Confirmar Servicio
     if (flujo === 'existente' && clienteSeleccionado && vehiculoSeleccionado && showConfirmarServicio) {
-      return <ConfirmarServicioSection cliente={clienteSeleccionado} vehiculo={vehiculoSeleccionado} servicios={serviciosSeleccionados} empleado={empleado} onBack={() => setShowConfirmarServicio(false)} />;
+      return <ConfirmarServicioSection cliente={clienteSeleccionado} vehiculo={vehiculoSeleccionado} servicios={serviciosSeleccionados} empleado={empleado} onBack={() => setShowConfirmarServicio(false)} onComplete={resetearEstadoCompleto} />;
     }
     // Sección 1.5: Cliente existente
     if (flujo === 'existente') {
@@ -778,6 +863,17 @@ export default function Services() {
                   Generar Hoja Cliente
                 </Button>
               </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Button 
+                  size="sm" 
+                  variant="destructive" 
+                  className="w-full font-bold" 
+                  onClick={() => handleConfirmarEliminacion(servicio)}
+                >
+                  <Trash className="h-4 w-4 mr-2" />
+                  Eliminar Servicio
+                </Button>
+              </div>
               {/* Modal para editar observación */}
               {editObsId === servicio.id && (
                 <Dialog open={true} onOpenChange={() => setEditObsId(null)}>
@@ -854,6 +950,71 @@ export default function Services() {
           </DialogContent>
         </Dialog>
       )}
+      
+      {/* Diálogo de confirmación para eliminar servicio */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-md w-full">
+          <DialogHeader>
+            <DialogTitle>¿Eliminar servicio?</DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará el servicio y realizará las siguientes reversiones automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <ul className="list-disc pl-5 space-y-1 text-sm">
+              <li>Eliminará todos los pagos relacionados</li>
+              <li>Reintegrará productos al inventario</li>
+              <li>Reintegrará productos de promociones al inventario</li>
+              <li>Revertirá pagos en efectivo de la caja</li>
+            </ul>
+            
+            <div className="p-3 bg-red-50 border border-red-200 rounded">
+              <p className="text-sm text-red-800 font-semibold">
+                ⚠️ Esta acción no se puede deshacer
+              </p>
+            </div>
+            
+            {servicioAEliminar && (
+              <div className="p-3 bg-gray-50 border rounded">
+                <p className="text-sm font-semibold">Servicio a eliminar:</p>
+                <p className="text-sm">Cliente: {servicioAEliminar.cliente_nombre}</p>
+                <p className="text-sm">Total: ${servicioAEliminar.precio_total}</p>
+                <p className="text-sm">Fecha: {new Date(servicioAEliminar.fecha_servicio).toLocaleDateString()}</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex justify-end gap-2 mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowDeleteDialog(false);
+                setServicioAEliminar(null);
+              }} 
+              disabled={loadingDelete}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleEliminarServicio} 
+              disabled={loadingDelete}
+            >
+              {loadingDelete ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash className="h-4 w-4 mr-2" />
+                  Eliminar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -861,7 +1022,7 @@ export default function Services() {
 // Sección 5: Confirmar Servicio
 
 
-function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBack }: { cliente: any, vehiculo: any, servicios: any[], empleado: any, onBack: () => void }) {
+function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBack, onComplete }: { cliente: any, vehiculo: any, servicios: any[], empleado: any, onBack: () => void, onComplete: () => void }) {
   // --- Estado para productos/promos y pago ---
   const [productosPromos, setProductosPromos] = useState<any[]>([]); // [{...producto, cantidad: number}]
   const [opciones, setOpciones] = useState<any[]>([]);
@@ -962,21 +1123,40 @@ function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBa
       cobros_extra: cobroExtraValor,
       empleado_id: empleado?.id || null,
     };
-    const pagoObj = {
-      id: crypto.randomUUID(),
-      servicio_id: servicioObj.id,
-      metodo_pago: metodoPago,
-      monto: Number(totalFinal),
-      fecha_pago: new Date().toISOString(),
-      estado: true,
-      observaciones: cobroExtraDesc || '',
-      cliente_id: cliente.id,
-    };
+    
     try {
       const { addDoc, collection, doc, updateDoc } = await import("firebase/firestore");
       const { db } = await import("../lib/firebase");
-      await addDoc(collection(db, "servicios"), servicioObj);
+      
+      // Registrar el servicio y obtener su ID principal de Firestore
+      const servicioRef = await addDoc(collection(db, "servicios"), servicioObj);
+      const servicioFirestoreId = servicioRef.id;
+      
+      // Crear el objeto de pago usando el ID principal del servicio
+      const pagoObj = {
+        id: crypto.randomUUID(),
+        servicio_id: servicioFirestoreId, // Usar el ID principal de Firestore
+        metodo_pago: metodoPago,
+        monto: Number(totalFinal),
+        fecha_pago: new Date().toISOString(),
+        estado: true,
+        observaciones: cobroExtraDesc || '',
+        cliente_id: cliente.id,
+      };
+      
       await addDoc(collection(db, "pagos"), pagoObj);
+      
+      // Si el pago es en efectivo, registrarlo en la caja usando el ID principal
+      if (metodoPago === "efectivo") {
+        const registrado = await registrarPagoEnCaja(Number(totalFinal), servicioFirestoreId, cliente.nombre, 'servicio');
+        if (registrado) {
+          showToast.info(`Pago en efectivo de $${totalFinal} registrado en caja`, { 
+            duration: 3000, 
+            position: "top-center" 
+          });
+        }
+      }
+      
       for (const p of productosPromos) {
         if (p.tipo === 'producto' && p.id) {
           const productoRef = doc(db, "productos", p.id);
@@ -1008,13 +1188,15 @@ function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBa
         }
       }
       showToast.success("Servicio y pago registrados correctamente.");
+      showToast.info("Redirigiendo a la vista principal...", { duration: 2000, position: "top-center" });
       setShowPagoDialog(false);
-      // Redirigir a la parte principal (cerrar el flujo de registro)
-      if (typeof onBack === 'function') {
-        setTimeout(() => {
-          onBack();
-        }, 500); // Pequeño delay para que se vea el toast
-      }
+      
+      // Usar la función onComplete para volver a la vista principal
+      setTimeout(() => {
+        if (typeof onComplete === 'function') {
+          onComplete();
+        }
+      }, 1000); // Delay para que se vea el toast
     } catch (e) {
       showToast.error("Error al registrar el servicio y pago.");
     } finally {
@@ -1417,7 +1599,7 @@ function SeleccionTipoServicioSection({ onSeleccion }: { onSeleccion: (tipo: str
   );
 }
 
-function ProductSaleSection({ onBack }: { onBack: () => void }) {
+function ProductSaleSection({ onBack, onComplete }: { onBack: () => void, onComplete: () => void }) {
   const [cliente, setCliente] = useState<any>(null);
   const [productos, setProductos] = useState<any[]>([]);
   const [promociones, setPromociones] = useState<any[]>([]);
@@ -1550,21 +1732,39 @@ function ProductSaleSection({ onBack }: { onBack: () => void }) {
       cobros_extra: extraVal,
       empleado_id: null
     };
-    const pago = {
-      id: crypto.randomUUID(),
-      servicio_id: servicioObj.id,
-      metodo_pago: metodo,
-      monto: Number(totalFinal),
-      fecha_pago: new Date().toISOString(),
-      estado: true,
-      observaciones: extraDesc,
-      cliente_id: cliente.id
-    };
+    
     try {
       const { addDoc, collection, doc, updateDoc } = await import("firebase/firestore");
       const { db } = await import("../lib/firebase");
-      await addDoc(collection(db, "servicios"), servicioObj);
+      
+      // Registrar el servicio y obtener su ID principal de Firestore
+      const servicioRef = await addDoc(collection(db, "servicios"), servicioObj);
+      const servicioFirestoreId = servicioRef.id;
+      
+      // Crear el objeto de pago usando el ID principal del servicio
+      const pago = {
+        id: crypto.randomUUID(),
+        servicio_id: servicioFirestoreId, // Usar el ID principal de Firestore
+        metodo_pago: metodo,
+        monto: Number(totalFinal),
+        fecha_pago: new Date().toISOString(),
+        estado: true,
+        observaciones: extraDesc,
+        cliente_id: cliente.id
+      };
+      
       await addDoc(collection(db, "pagos"), pago);
+      
+      // Si el pago es en efectivo, registrarlo en la caja usando el ID principal
+      if (metodo === "efectivo") {
+        const registrado = await registrarPagoEnCaja(Number(totalFinal), servicioFirestoreId, cliente.nombre, 'venta');
+        if (registrado) {
+          showToast.info(`Pago en efectivo de $${totalFinal} registrado en caja`, { 
+            duration: 3000, 
+            position: "top-center" 
+          });
+        }
+      }
       
       // Actualizar stock para productos y productos incluidos en promociones
       for (let c of cart) {
@@ -1593,8 +1793,15 @@ function ProductSaleSection({ onBack }: { onBack: () => void }) {
       }
       
       showToast.success("Venta registrada correctamente.");
+      showToast.info("Redirigiendo a la vista principal...", { duration: 2000, position: "top-center" });
       setShowPago(false);
-      setTimeout(onBack, 500);
+      
+      // Usar la función onComplete para volver a la vista principal
+      setTimeout(() => {
+        if (typeof onComplete === 'function') {
+          onComplete();
+        }
+      }, 1000); // Delay para que se vea el toast
     } catch (e: any) {
       console.error(e);
       showToast.error("Error al registrar la venta: " + (e?.message || ""));

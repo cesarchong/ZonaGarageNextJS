@@ -45,6 +45,19 @@ export default function ServiceTypes() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
+  // Manejar la clase 'dialog-open' en el body para ocultar la barra flotante móvil
+  useEffect(() => {
+    const anyDialogOpen = open || deleteDialogOpen
+    if (anyDialogOpen) {
+      document.body.classList.add("dialog-open")
+    } else {
+      document.body.classList.remove("dialog-open")
+    }
+    return () => {
+      document.body.classList.remove("dialog-open")
+    }
+  }, [open, deleteDialogOpen])
+
   const fetchServiceTypes = async () => {
     setLoading(true)
     const data = await getCollection("tipos_servicio")

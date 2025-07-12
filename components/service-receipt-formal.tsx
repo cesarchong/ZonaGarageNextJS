@@ -1,6 +1,7 @@
 "use client"
 
-import { X, Printer } from "lucide-react"
+import { Printer, X } from "lucide-react"
+import { useEffect } from "react"
 
 interface ServiceReceiptFormalProps {
   isOpen: boolean
@@ -35,6 +36,18 @@ interface ServiceReceiptFormalProps {
 }
 
 export default function ServiceReceiptFormal({ isOpen, onClose, serviceData }: ServiceReceiptFormalProps) {
+  // Manejar la clase 'dialog-open' en el body para ocultar la barra flotante móvil
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add("dialog-open")
+    } else {
+      document.body.classList.remove("dialog-open")
+    }
+    return () => {
+      document.body.classList.remove("dialog-open")
+    }
+  }, [isOpen])
+
   if (!isOpen || !serviceData) return null
 
   const handlePrint = () => {

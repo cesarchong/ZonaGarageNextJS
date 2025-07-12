@@ -112,23 +112,10 @@ export default function BestSellers() {
       // Procesar datos de ventas para calcular productos más vendidos
       const productSalesMap = new Map<string, ProductSalesData>()
 
-      // Procesar servicios filtrados por fecha
+      // Procesar solo servicios filtrados por fecha (no procesar pagos por separado para evitar doble conteo)
       filteredServicios.forEach((servicio) => {
         if (Array.isArray(servicio.productos) && servicio.productos.length > 0) {
           servicio.productos.forEach((producto: any) => {
-            if (producto.id && !producto.id.startsWith("promo-")) {
-              processProductSale(producto, productSalesMap, productosData)
-            }
-          })
-        }
-      })
-
-      // Procesar pagos directos filtrados por fecha - obtener productos desde servicios
-      filteredPagos.forEach((pago) => {
-        // Buscar el servicio asociado al pago para obtener los productos
-        const servicioAsociado = filteredServicios.find(s => s.id === pago.servicio_id)
-        if (servicioAsociado && Array.isArray(servicioAsociado.productos) && servicioAsociado.productos.length > 0) {
-          servicioAsociado.productos.forEach((producto: any) => {
             if (producto.id && !producto.id.startsWith("promo-")) {
               processProductSale(producto, productSalesMap, productosData)
             }
@@ -144,11 +131,19 @@ export default function BestSellers() {
       setProducts(salesData)
       console.log("Datos cargados:", {
         productos: productosData.length,
-        servicios: serviciosData.length,
-        pagos: pagosData.length,
+        serviciosTotales: serviciosData.length,
+        serviciosFiltrados: filteredServicios.length,
+        pagosTotales: pagosData.length,
+        pagosFiltrados: filteredPagos.length,
         promociones: promocionesData.length,
         productosConVentas: salesData.length,
       })
+      console.log("Servicios filtrados detalle:", filteredServicios.map(s => ({
+        id: s.id,
+        precio_total: s.precio_total,
+        productos: s.productos?.length || 0,
+        fecha: s.fecha_servicio
+      })))
     } catch (error) {
       console.error("Error loading data:", error)
       toast({
@@ -231,29 +226,20 @@ export default function BestSellers() {
 
   // Obtener estadísticas del período
   const getProductionStats = (): ProductionStats => {
-    // Calcular ingresos totales de servicios y pagos filtrados por fecha
-    const serviciosIngresos = servicios.reduce((total, servicio) => {
-      const precio = typeof servicio.precio_total === 'string' 
-        ? parseFloat(servicio.precio_total) 
-        : (servicio.precio_total || 0)
-      return total + precio
-    }, 0)
-    
-    const pagosIngresos = pagos.reduce((total, pago) => {
-      return total + (pago.monto || 0)
-    }, 0)
-    
-    // Total de ingresos (servicios + pagos)
-    const totalRevenue = serviciosIngresos + pagosIngresos
-    
     // Para productos vendidos, usar los datos procesados
     const filtered = getProductsWithSales()
     const totalSold = filtered.reduce((sum, product) => sum + product.cantidad_vendida, 0)
+    
+    // Los ingresos totales se calculan solo desde los productos vendidos
+    const totalRevenue = filtered.reduce((sum, product) => sum + product.ingresos, 0)
+    
+    // Calcular precio promedio basado en los ingresos de productos
+    const averagePrice = totalSold > 0 ? totalRevenue / totalSold : 0
 
     return {
       totalSold,
       totalRevenue,
-      averagePrice: totalRevenue / totalSold || 0,
+      averagePrice,
       uniqueProducts: filtered.length,
     }
   }
@@ -770,7 +756,7 @@ export default function BestSellers() {
               <i className="fas fa-dollar-sign text-green-600 text-xl"></i>
             </div>
             <div className="ml-4">
-              <p className="text-sm text-gray-500">Ingresos</p>
+              <p className="text-sm text-gray-500">Ingresos por Productos</p>
               <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
             </div>
           </div>

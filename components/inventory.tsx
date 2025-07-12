@@ -12,7 +12,7 @@ import { useEffect, useState } from "react"
 import type { Categorias } from "../interfaces/categorias.interface"
 import type { Productos } from "../interfaces/productos.interface"
 import type { Proveedor } from "../interfaces/proveedores.interface"
-import { addDocument, getCollection } from "../lib/firebase"
+import { addDocument, deleteDocument, getCollection, updateDocument } from "../lib/firebase"
 // Definir la interfaz para tipos de servicio
 interface TipoServicio {
   id: string
@@ -32,7 +32,7 @@ export default function Inventory() {
   const [servicios, setServicios] = useState<TipoServicio[]>([])
   const [currentProduct, setCurrentProduct] = useState<Productos | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
-  const [filterCategory, setFilterCategory] = useState("")
+  const [filterCategory, setFilterCategory] = useState("todas")
 
   // Form state
   const [name, setName] = useState("")
@@ -65,6 +65,7 @@ export default function Inventory() {
         }))
       )
     } catch (error) {
+      console.error("Error fetching categorias:", error)
       setCategorias([])
     }
   }
@@ -84,6 +85,7 @@ export default function Inventory() {
         }))
       )
     } catch (error) {
+      console.error("Error fetching servicios:", error)
       setServicios([])
     }
   }
@@ -110,6 +112,7 @@ export default function Inventory() {
         }))
       )
     } catch (error) {
+      console.error("Error fetching proveedores:", error)
       setProveedores([])
     }
   }
@@ -139,9 +142,14 @@ export default function Inventory() {
   }
 
   const openFormDialog = () => {
-    setCurrentProduct(null)
-    setFormDialogOpen(true)
-    resetForm()
+    try {
+      setCurrentProduct(null)
+      setFormDialogOpen(true)
+      resetForm()
+    } catch (error) {
+      console.error("Error opening form dialog:", error)
+      showToast.error("Error al abrir el formulario", { duration: 4000, position: "top-center" })
+    }
   }
   const closeFormDialog = () => {
     setFormDialogOpen(false)
@@ -150,48 +158,57 @@ export default function Inventory() {
   }
 
   const resetForm = () => {
-    setName("")
-    setCategory("")
-    setPrice("")
-    setCost("")
-    setQuantity("")
-    setMinStock("5")
-    setSupplier("")
-    setDescription("")
-    setAssociatedService("")
+    try {
+      setName("")
+      setCategory("")
+      setPrice("")
+      setCost("")
+      setQuantity("")
+      setMinStock("5")
+      setSupplier("ninguno")
+      setDescription("")
+      setAssociatedService("ninguno")
+    } catch (error) {
+      console.error("Error resetting form:", error)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) {
-      showToast.error("El nombre del producto es obligatorio", { duration: 4000, position: "top-center" })
-      return
-    }
-    if (!category) {
-      showToast.error("La categoría es obligatoria", { duration: 4000, position: "top-center" })
-      return
-    }
-    if (!price || isNaN(Number(price))) {
-      showToast.error("El precio de venta es obligatorio y debe ser numérico", { duration: 4000, position: "top-center" })
-      return
-    }
-    if (!quantity || isNaN(Number(quantity))) {
-      showToast.error("La cantidad disponible es obligatoria y debe ser numérica", { duration: 4000, position: "top-center" })
-      return
-    }
-    if (!minStock || isNaN(Number(minStock))) {
-      showToast.error("El stock mínimo es obligatorio y debe ser numérico", { duration: 4000, position: "top-center" })
-      return
-    }
-    // Validar nombre único (ignorando espacios y mayúsculas/minúsculas)
-    const nombreNormalizado = name.trim().toLowerCase().replace(/\s+/g, " ")
-    const existe = products.some(p => p.nombre.trim().toLowerCase().replace(/\s+/g, " ") === nombreNormalizado && (!currentProduct || p.id !== currentProduct.id))
-    if (existe) {
-      showToast.error("Ya existe un producto con ese nombre", { duration: 4000, position: "top-center" })
-      return
-    }
-    setLoading(true)
+    
     try {
+      // Validaciones
+      if (!name.trim()) {
+        showToast.error("El nombre del producto es obligatorio", { duration: 4000, position: "top-center" })
+        return
+      }
+      if (!category) {
+        showToast.error("La categoría es obligatoria", { duration: 4000, position: "top-center" })
+        return
+      }
+      if (!price || isNaN(Number(price))) {
+        showToast.error("El precio de venta es obligatorio y debe ser numérico", { duration: 4000, position: "top-center" })
+        return
+      }
+      if (!quantity || isNaN(Number(quantity))) {
+        showToast.error("La cantidad disponible es obligatoria y debe ser numérica", { duration: 4000, position: "top-center" })
+        return
+      }
+      if (!minStock || isNaN(Number(minStock))) {
+        showToast.error("El stock mínimo es obligatorio y debe ser numérico", { duration: 4000, position: "top-center" })
+        return
+      }
+      
+      // Validar nombre único (ignorando espacios y mayúsculas/minúsculas)
+      const nombreNormalizado = name.trim().toLowerCase().replace(/\s+/g, " ")
+      const existe = products.some(p => p.nombre.trim().toLowerCase().replace(/\s+/g, " ") === nombreNormalizado && (!currentProduct || p.id !== currentProduct.id))
+      if (existe) {
+        showToast.error("Ya existe un producto con ese nombre", { duration: 4000, position: "top-center" })
+        return
+      }
+      
+      setLoading(true)
+      
       const productData = {
         nombre: name.trim(),
         descripcion: description.trim(),
@@ -201,11 +218,11 @@ export default function Inventory() {
         precio_venta: Number(price),
         cantidad_disponible: quantity.toString(),
         stock_minimo: minStock.toString(),
-        id_proveedor: supplier || "",
+        id_proveedor: supplier && supplier !== "ninguno" ? supplier : "",
       }
+
       if (currentProduct) {
         // Actualizar producto existente
-        const { updateDocument } = await import("../lib/firebase")
         await updateDocument(`productos/${currentProduct.id}`, productData)
         showToast.success("Producto actualizado exitosamente", { duration: 4000, position: "top-center" })
       } else {
@@ -213,11 +230,14 @@ export default function Inventory() {
         await addDocument("productos", productData)
         showToast.success("Producto registrado exitosamente", { duration: 4000, position: "top-center" })
       }
+      
       await fetchProducts()
       setFormDialogOpen(false)
       resetForm()
     } catch (error: any) {
-      showToast.error(error?.message || "Ocurrió un error al guardar el producto", { duration: 4000, position: "top-center" })
+      console.error("Error in handleSubmit:", error)
+      const errorMessage = error?.message || error?.toString() || "Ocurrió un error al guardar el producto"
+      showToast.error(errorMessage, { duration: 4000, position: "top-center" })
     } finally {
       setLoading(false)
     }
@@ -232,7 +252,7 @@ export default function Inventory() {
     setCost(product.costo?.toString() || "")
     setQuantity(product.cantidad_disponible?.toString() || "")
     setMinStock(product.stock_minimo?.toString() || "")
-    setSupplier(product.id_proveedor || "")
+    setSupplier(product.id_proveedor || "ninguno")
     setDescription(product.descripcion || "")
     setAssociatedService(product.id_tipo_servicio || "ninguno")
     setFormDialogOpen(true)
@@ -245,7 +265,7 @@ export default function Inventory() {
   // Eliminar producto de Firebase
   const deleteProduct = async (id: string) => {
     try {
-      await import("../lib/firebase").then(({ deleteDocument }) => deleteDocument(`productos/${id}`))
+      await deleteDocument(`productos/${id}`)
       showToast.success("Producto eliminado exitosamente", { duration: 4000, position: "top-center" })
       fetchProducts()
     } catch (error: any) {
@@ -264,9 +284,7 @@ export default function Inventory() {
         showToast.error("No se puede reducir el stock por debajo de 0", { duration: 4000, position: "top-center" })
         return
       }
-      await import("../lib/firebase").then(({ updateDocument }) =>
-        updateDocument(`productos/${id}`, { cantidad_disponible: newQuantity.toString() })
-      )
+      await updateDocument(`productos/${id}`, { cantidad_disponible: newQuantity.toString() })
       showToast.success(`Stock ${adjustment > 0 ? "aumentado" : "reducido"} exitosamente`, { duration: 4000, position: "top-center" })
       fetchProducts()
     } catch (error: any) {
@@ -279,7 +297,7 @@ export default function Inventory() {
     const matchesSearch =
       product.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = filterCategory === "" || product.id_categoria === filterCategory
+    const matchesCategory = filterCategory === "" || filterCategory === "todas" || product.id_categoria === filterCategory
     return matchesSearch && matchesCategory
   })
 
@@ -373,7 +391,7 @@ export default function Inventory() {
                 <SelectValue placeholder="Todas las categorías" />
               </SelectTrigger>
               <SelectContent>
-                {/* No SelectItem with value="" */}
+                <SelectItem value="todas">Todas las categorías</SelectItem>
                 {categorias.map((cat) => (
                   <SelectItem key={cat.id} value={cat.nombre}>{cat.nombre}</SelectItem>
                 ))}
@@ -499,8 +517,9 @@ export default function Inventory() {
                         <SelectValue placeholder="Seleccione proveedor..." />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="ninguno">Sin proveedor</SelectItem>
                         {proveedores.length === 0 ? (
-                          <SelectItem value="" disabled>No hay proveedores</SelectItem>
+                          <SelectItem value="no-disponible" disabled>No hay proveedores disponibles</SelectItem>
                         ) : (
                           proveedores.map((prov) => (
                             <SelectItem key={prov.id} value={prov.id}>{prov.nombre} ({prov.rif})</SelectItem>
@@ -559,7 +578,7 @@ export default function Inventory() {
                 <div><span className="font-semibold">Costo:</span> ${Number(infoProduct.costo).toFixed(2)}</div>
                 <div><span className="font-semibold">Cantidad Disponible:</span> {infoProduct.cantidad_disponible}</div>
                 <div><span className="font-semibold">Stock Mínimo:</span> {infoProduct.stock_minimo}</div>
-                <div><span className="font-semibold">Proveedor:</span> {proveedores.find(p => p.id === infoProduct.id_proveedor)?.nombre || '-'}</div>
+                <div><span className="font-semibold">Proveedor:</span> {infoProduct.id_proveedor && infoProduct.id_proveedor !== "ninguno" ? (proveedores.find(p => p.id === infoProduct.id_proveedor)?.nombre || 'Proveedor no encontrado') : 'Sin proveedor'}</div>
               </div>
             )}
             <DialogFooter>

@@ -230,17 +230,19 @@ export default function ServicePrintSheet({
           .signature-section {
             margin-top: 30px;
             margin-bottom: 20px;
+            text-align: center;
           }
           
           .signature-line {
             border-bottom: 1px solid #000;
             width: 200px;
             height: 40px;
-            margin-bottom: 5px;
+            margin: 0 auto 5px auto;
           }
           
           .signature-label {
             font-size: 12px;
+            text-align: center;
           }
           
           .footer {

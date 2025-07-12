@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react";
 
 interface ServiceReceiptProps {
   isOpen: boolean;
@@ -14,6 +15,18 @@ interface ServiceReceiptProps {
 }
 
 export default function ServiceReceiptWithOutPrice({ isOpen, onClose, receiptData }: ServiceReceiptProps) {
+  // Manejar la clase 'dialog-open' en el body para ocultar la barra flotante móvil
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add("dialog-open")
+    } else {
+      document.body.classList.remove("dialog-open")
+    }
+    return () => {
+      document.body.classList.remove("dialog-open")
+    }
+  }, [isOpen])
+
   if (!isOpen || !receiptData) return null;
   const { service, client, vehicle, employee, pagos = [] } = receiptData;
 

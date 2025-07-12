@@ -19,7 +19,13 @@ export default function ClientReceptionSheet({
     const printContent = document.getElementById("client-reception-content")
     if (!printContent) return
 
-    const originalContent = document.body.innerHTML
+    // Crear ventana de impresión en lugar de modificar el DOM actual
+    const printWindow = window.open("", "_blank", "width=800,height=600");
+    if (!printWindow) {
+      alert("Por favor, permita ventanas emergentes para imprimir la hoja de recepción");
+      return;
+    }
+
     const printStyles = `
       <style>
         @media print {
@@ -182,9 +188,29 @@ export default function ClientReceptionSheet({
       </style>
     `
 
-    document.body.innerHTML = printStyles + printContent.outerHTML
-    window.print()
-    document.body.innerHTML = originalContent
+    // Escribir el HTML completo en la nueva ventana
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Hoja de Recepción - Zona Garaje</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        ${printStyles}
+      </head>
+      <body>
+        ${printContent.outerHTML}
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
   }
 
   const getCurrentDate = () => {
