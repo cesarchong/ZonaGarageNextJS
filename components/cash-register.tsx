@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast"
 import type { Caja, CashMovement } from "@/interfaces/caja.interface"
 import type { Pagos } from "@/interfaces/pagos.interface"
-import type { Servicios } from "@/interfaces/servicios.interface"
 import { addDocument, getCollection, updateDocument } from "@/lib/firebase"
 import { formatCurrency, formatDateTime } from "@/lib/utils"
 import { useEffect, useState } from "react"
@@ -112,16 +111,31 @@ export default function CashRegister() {
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
       
-      const [servicios, pagos] = await Promise.all([
-        getCollection("servicios") as Promise<Servicios[]>,
-        getCollection("pagos") as Promise<Pagos[]>
-      ])
+      console.log("🔍 Cargando pagos del día:", {
+        todayStart: todayStart.toISOString(),
+        todayEnd: todayEnd.toISOString()
+      });
       
-      // Filtrar servicios del día actual usando la misma lógica que reportes
-      const todayServices = servicios.filter(servicio => {
-        const serviceDate = new Date(servicio.fecha_servicio)
-        return serviceDate >= todayStart && serviceDate < todayEnd
-      })
+      const pagos = await getCollection("pagos") as Pagos[]
+      console.log("📊 Total de pagos en la colección:", pagos.length);
+      
+      // Filtrar pagos del día actual por fecha_pago
+      const todayPayments = pagos.filter(pago => {
+        if (!pago.fecha_pago) return false;
+        const paymentDate = new Date(pago.fecha_pago);
+        const isToday = paymentDate >= todayStart && paymentDate < todayEnd;
+        if (isToday) {
+          console.log("✅ Pago del día encontrado:", {
+            id: pago.id,
+            monto: pago.monto,
+            metodo_pago: pago.metodo_pago,
+            fecha_pago: pago.fecha_pago
+          });
+        }
+        return isToday;
+      });
+
+      console.log("📋 Pagos filtrados del día:", todayPayments.length);
 
       const payments = {
         cash: 0,
@@ -133,51 +147,51 @@ export default function CashRegister() {
         total: 0,
       }
 
-      // Si hay pagos registrados, usar esos datos
-      const todayServiceIds = todayServices.map(s => s.id)
-      const todayPayments = pagos.filter(pago => todayServiceIds.includes(pago.servicio_id))
-      
-      if (todayPayments.length > 0) {
-        // Usar pagos reales de la colección pagos
-        todayPayments.forEach(pago => {
-          const monto = Number(pago.monto) || 0
-          
-          switch (pago.metodo_pago?.toLowerCase()) {
-            case 'efectivo':
-              payments.cash += monto
-              break
-            case 'tarjeta':
-              payments.card += monto
-              break
-            case 'transferencia':
-              payments.transfer += monto
-              break
-            case 'pago_movil':
-            case 'pago móvil':
-              payments.mobile += monto
-              break
-            case 'zelle':
-              payments.zelle += monto
-              break
-            case 'binance':
-              payments.binance += monto
-              break
-            default:
-              payments.cash += monto
-              break
-          }
-          payments.total += monto
-        })
-      } else {
-        // Si no hay pagos registrados, usar precio_total de servicios como fallback
-        // y asumir que todo fue pagado en efectivo
-        todayServices.forEach(servicio => {
-          const total = Number(servicio.precio_total) || 0
-          payments.cash += total
-          payments.total += total
-        })
-      }
+      // Procesar pagos del día
+      todayPayments.forEach(pago => {
+        const monto = Number(pago.monto) || 0
+        const metodo = pago.metodo_pago?.toLowerCase() || 'efectivo'
+        
+        console.log("💰 Procesando pago:", {
+          monto,
+          metodo_original: pago.metodo_pago,
+          metodo_normalizado: metodo
+        });
+        
+        switch (metodo) {
+          case 'efectivo':
+            payments.cash += monto
+            break
+          case 'tarjeta':
+          case 'tarjeta de credito':
+          case 'tarjeta de débito':
+            payments.card += monto
+            break
+          case 'transferencia':
+          case 'transferencia bancaria':
+            payments.transfer += monto
+            break
+          case 'pago_movil':
+          case 'pago móvil':
+          case 'pago movil':
+            payments.mobile += monto
+            break
+          case 'zelle':
+            payments.zelle += monto
+            break
+          case 'binance':
+          case 'criptomoneda':
+            payments.binance += monto
+            break
+          default:
+            console.log("⚠️ Método de pago no reconocido:", metodo, "- asignando a efectivo");
+            payments.cash += monto
+            break
+        }
+        payments.total += monto
+      })
 
+      console.log("📈 Resumen de pagos procesados:", payments);
       setDailyPayments(payments)
     } catch (error) {
       console.error("Error loading daily payments:", error)

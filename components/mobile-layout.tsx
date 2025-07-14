@@ -118,110 +118,14 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
       {/* Main Content */}
       <main className="mobile-main-content">{children}</main>
 
-      {/* Floating Bottom Navigation: ocultar todo el nav si hay dialog */}
+      {/* Floating Bottom Navigation: OCULTO - Panel de opciones flotante deshabilitado */}
+      {/* 
       {!dialogOpen && (
         <nav className={`mobile-floating-nav ${isScrollingDown ? "hidden" : "visible"}`}>
-          <div className="mobile-nav-grid">
-            <button
-              className={`mobile-nav-button ${currentSection === "dashboard" ? "active" : ""}`}
-              onClick={() => handleSectionClick("dashboard")}
-            >
-              <i className="fas fa-tachometer-alt"></i>
-              <span>Panel</span>
-            </button>
-            <button
-              className={`mobile-nav-button ${currentSection === "services" ? "active" : ""}`}
-              onClick={() => handleSectionClick("services")}
-            >
-              <i className="fas fa-tools"></i>
-              <span>Servicios</span>
-            </button>
-            <button
-              className={`mobile-nav-button ${currentSection === "clients" ? "active" : ""}`}
-              onClick={() => handleSectionClick("clients")}
-            >
-              <i className="fas fa-users"></i>
-              <span>Clientes</span>
-            </button>
-            <button
-              className={`mobile-nav-button ${currentSection === "best-sellers" ? "active" : ""}`}
-              onClick={() => handleSectionClick("best-sellers")}
-            >
-              <i className="fas fa-trophy"></i>
-              <span>Más vendidos</span>
-            </button>
-          </div>
-          <div className="mobile-nav-grid mobile-nav-grid-second">
-            <button
-              className={`mobile-nav-button ${currentSection === "inventory" ? "active" : ""}`}
-              onClick={() => handleSectionClick("inventory")}
-            >
-              <i className="fas fa-boxes"></i>
-              <span>Inventario</span>
-            </button>
-            <button
-              className={`mobile-nav-button ${currentSection === "categories" ? "active" : ""}`}
-              onClick={() => handleSectionClick("categories")}
-            >
-              <i className="fas fa-layer-group"></i>
-              <span>Categorías</span>
-            </button>
-            <button
-              className={`mobile-nav-button ${currentSection === "providers" ? "active" : ""}`}
-              onClick={() => handleSectionClick("providers")}
-            >
-              <i className="fas fa-truck"></i>
-              <span>Proveedores</span>
-            </button>
-            {/* Solo mostrar Personal si NO es trabajador */}
-            {isTrabajador ? null : (
-              <button
-                className={`mobile-nav-button ${currentSection === "employees" ? "active" : ""}`}
-                onClick={() => handleSectionClick("employees")}
-              >
-                <i className="fas fa-user-gear"></i>
-                <span>Personal</span>
-              </button>
-            )}
-          </div>
-          <div className="mobile-nav-grid mobile-nav-grid-third">
-            {/* Caja siempre visible */}
-            <button
-              className={`mobile-nav-button ${currentSection === "cash-register" ? "active" : ""}`}
-              onClick={() => handleSectionClick("cash-register")}
-            >
-              <i className="fas fa-cash-register"></i>
-              <span>Caja</span>
-            </button>
-            <button
-              className={`mobile-nav-button ${currentSection === "loyalty" ? "active" : ""}`}
-              onClick={() => handleSectionClick("loyalty")}
-            >
-              <i className="fas fa-star"></i>
-              <span>Lealtad</span>
-            </button>
-            {/* Opciones solo para ADMINISTRADOR */}
-            {isAdmin && (
-              <>
-                <button
-                  className={`mobile-nav-button ${currentSection === "reports" ? "active" : ""}`}
-                  onClick={() => handleSectionClick("reports")}
-                >
-                  <i className="fas fa-chart-bar"></i>
-                  <span>Reportes</span>
-                </button>
-                <button
-                  className={`mobile-nav-button ${currentSection === "admin" ? "active" : ""}`}
-                  onClick={() => handleSectionClick("admin")}
-                >
-                  <i className="fas fa-cog"></i>
-                  <span>Administración</span>
-                </button>
-              </>
-            )}
-          </div>
+          ...panel de navegación flotante comentado...
         </nav>
       )}
+      */}
 
       {/* Mobile Sidebar */}
       {sidebarOpen && (
@@ -407,7 +311,7 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
 
         .mobile-main-content {
           padding-top: 70px;
-          padding-bottom: 140px;
+          padding-bottom: 20px;
           min-height: 100vh;
         }
 
