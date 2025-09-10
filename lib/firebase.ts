@@ -9,13 +9,16 @@ import { getStorage, uploadString, getDownloadURL, ref } from "firebase/storage"
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
+      //TODO API DE PRODUCCION
     apiKey: "AIzaSyCKDAAtolpd03WEtX2pBLqRjN5mrY_q5K4",
   authDomain: "zonagaraje-41c74.firebaseapp.com",
   projectId: "zonagaraje-41c74",
   storageBucket: "zonagaraje-41c74.firebasestorage.app",
   messagingSenderId: "288279094036",
   appId: "1:288279094036:web:2ad1c3f4c98424db545801",
-  measurementId: "G-F13163XZZM"       
+  measurementId: "G-F13163XZZM"      
+  
+  //TODO API DE DESARROLLO
 //     apiKey: "AIzaSyDimjZnErbNsJiZFYw-MlhVeZSbyMTJTvs",
 //   authDomain: "inventario-9e8d6.firebaseapp.com",
 //   projectId: "inventario-9e8d6",

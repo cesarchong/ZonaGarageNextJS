@@ -597,7 +597,7 @@ const editVehicle = (vehicle: any) => {
       if (!client) return
       const currentPoints = clientPoints[clientId]?.points || 0
       if (currentPoints < 20) {
-      showToast.error(`${client.name} tiene ${currentPoints} puntos. Necesita 20 para canjear.`, {
+      showToast.error(`${client.nombre} tiene ${currentPoints} puntos. Necesita 20 para canjear.`, {
         duration: 4000,
         progress: true,
         position: "top-center",
@@ -609,14 +609,14 @@ const editVehicle = (vehicle: any) => {
       }
       const redemption = {
         clientId,
-        clientName: client.name,
+        clientName: client.nombre,
         pointsUsed: 20,
         reward: "Lavado Gratis",
         createdAt: new Date().toISOString(),
         status: "Disponible",
       }
       await addDoc(collection(db, "pointRedemptions"), redemption)
-      showToast.success(`${client.name} ha canjeado 20 puntos por un lavado gratis`, {
+      showToast.success(`${client.nombre} ha canjeado 20 puntos por un lavado gratis`, {
         duration: 4000,
         progress: true,
         position: "top-center",
@@ -660,7 +660,7 @@ const editVehicle = (vehicle: any) => {
     if (searchBy === 'cedula') {
       return (client.cedula && client.cedula.toLowerCase().includes(searchTermLower))
     } else {
-      return client.name.toLowerCase().includes(searchTermLower)
+      return (client.nombre && client.nombre.toLowerCase().includes(searchTermLower))
     }
   })
 
