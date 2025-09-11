@@ -46,6 +46,21 @@ export default function CashRegister() {
 
   const { toast } = useToast()
 
+  // Función para obtener el usuario actual del localStorage
+  const getCurrentUser = () => {
+    try {
+      const userData = localStorage.getItem('userData')
+      if (userData) {
+        const user = JSON.parse(userData)
+        return user.nombre || 'Usuario'
+      }
+      return 'Admin'
+    } catch (error) {
+      console.error('Error al obtener userData del localStorage:', error)
+      return 'Admin'
+    }
+  }
+
   useEffect(() => {
     loadCashRegisterData()
     loadDailyPayments()
@@ -58,12 +73,23 @@ export default function CashRegister() {
       loadRecentMovements(); // Recargar movimientos recientes
     };
     
+    // Escuchar eventos de eliminación de servicios
+    const handleServiceDeleted = (event: CustomEvent) => {
+      console.log("Evento serviceDeleted recibido:", event.detail);
+      const { amount, paymentMethod } = event.detail;
+      if (amount && amount > 0) {
+        handleServiceDeletion(amount, paymentMethod);
+      }
+    };
+    
     window.addEventListener('cajaUpdated', handleCajaUpdated as EventListener);
+    window.addEventListener('serviceDeleted', handleServiceDeleted as EventListener);
     
     return () => {
       window.removeEventListener('cajaUpdated', handleCajaUpdated as EventListener);
+      window.removeEventListener('serviceDeleted', handleServiceDeleted as EventListener);
     };
-  }, [])
+  }, [dailyPayments, currentCaja, isOpen, cashAmount])
 
   const loadCashRegisterData = async () => {
     try {
@@ -250,6 +276,81 @@ export default function CashRegister() {
     }
   }
 
+  // Función para manejar la eliminación de servicios
+  const handleServiceDeletion = async (serviceAmount: number, paymentMethod: string = 'efectivo') => {
+    try {
+      if (!currentCaja || !isOpen) {
+        console.warn("No hay caja abierta para procesar la eliminación del servicio");
+        return;
+      }
+
+      // Registrar movimiento de retiro por eliminación de servicio
+      await addMovement({
+        tipo: "retiro",
+        monto: serviceAmount,
+        descripcion: `Eliminación de servicio - ${formatCurrency(serviceAmount)}`,
+        id_caja: currentCaja.id,
+        fecha_hora: new Date().toISOString(),
+        fecha_creacion: new Date().toISOString(),
+        metodo_pago: paymentMethod
+      })
+
+      // Actualizar los pagos del día restando el monto eliminado
+      const updatedPayments = { ...dailyPayments }
+      const metodo = paymentMethod?.toLowerCase() || 'efectivo'
+      
+      switch (metodo) {
+        case 'efectivo':
+          updatedPayments.cash = Math.max(0, updatedPayments.cash - serviceAmount)
+          break
+        case 'tarjeta':
+        case 'tarjeta de credito':
+        case 'tarjeta de débito':
+          updatedPayments.card = Math.max(0, updatedPayments.card - serviceAmount)
+          break
+        case 'transferencia':
+        case 'transferencia bancaria':
+          updatedPayments.transfer = Math.max(0, updatedPayments.transfer - serviceAmount)
+          break
+        case 'pago_movil':
+        case 'pago móvil':
+        case 'pago movil':
+          updatedPayments.mobile = Math.max(0, updatedPayments.mobile - serviceAmount)
+          break
+        case 'zelle':
+          updatedPayments.zelle = Math.max(0, updatedPayments.zelle - serviceAmount)
+          break
+        case 'binance':
+        case 'criptomoneda':
+          updatedPayments.binance = Math.max(0, updatedPayments.binance - serviceAmount)
+          break
+        default:
+          updatedPayments.cash = Math.max(0, updatedPayments.cash - serviceAmount)
+          break
+      }
+      
+      // Actualizar el total
+      updatedPayments.total = Math.max(0, updatedPayments.total - serviceAmount)
+      
+      setDailyPayments(updatedPayments)
+      
+      console.log("📉 Servicio eliminado - Pagos actualizados:", updatedPayments);
+      
+      toast({
+        title: "Servicio eliminado",
+        description: `Se restó ${formatCurrency(serviceAmount)} de los ingresos del día`,
+      })
+      
+    } catch (error) {
+      console.error("Error al procesar eliminación de servicio:", error)
+      toast({
+        title: "Error",
+        description: "Error al procesar la eliminación del servicio",
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleOpenCash = async () => {
     try {
       const initialAmount = Number.parseFloat(formData.initialAmount) || 0
@@ -257,7 +358,7 @@ export default function CashRegister() {
       const cajaData: Omit<Caja, 'id'> = {
         esta_abierta: true,
         fecha_apertura: new Date().toISOString(),
-        abierta_por: "Admin", // Aquí puedes obtener el usuario actual
+        abierta_por: getCurrentUser(),
         monto_inicial: initialAmount,
         monto_efectivo: initialAmount,
         fecha_creacion: new Date().toISOString(),

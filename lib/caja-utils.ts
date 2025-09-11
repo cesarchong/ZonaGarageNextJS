@@ -237,25 +237,41 @@ export const eliminarServicioCompleto = async (servicioId: string) => {
       }
     }
 
-    // 6. Eliminar los pagos relacionados usando su ID principal de Firestore
-    console.log(`🗑️ Iniciando eliminación de ${pagosServicio.length} pagos...`);
+    // 6. Eliminar los pagos relacionados
+    console.log(`🗑️ Iniciando eliminación de pagos...`);
     
+    // Método 1: Eliminar usando el pago_id del servicio (más directo)
+    if (servicio.pago_id) {
+      try {
+        console.log(`🔥 Eliminando pago directo con ID: ${servicio.pago_id}`);
+        await deleteDocument(`pagos/${servicio.pago_id}`);
+        console.log(`✅ Pago principal eliminado exitosamente: ${servicio.pago_id}`);
+      } catch (error) {
+        console.error(`❌ Error al eliminar pago principal ${servicio.pago_id}:`, error);
+        // Continuar con el método de respaldo
+      }
+    }
+    
+    // Método 2: Eliminar usando consulta por servicio_id (respaldo para pagos adicionales)
+    console.log(`🔍 Buscando pagos adicionales con servicio_id: ${servicioId}`);
     for (const pago of pagosServicio) {
       try {
-        // pago.id ya contiene el ID principal de Firestore (gracias a getCollection)
-        const pagoId = pago.id;
-        console.log(`🔥 Eliminando pago con ID: ${pagoId}`);
-        console.log(`📋 Datos del pago:`, {
-          id: pago.id,
-          servicio_id: (pago as any).servicio_id,
-          monto: (pago as any).monto,
-          metodo_pago: (pago as any).metodo_pago
-        });
-        
-        await deleteDocument(`pagos/${pagoId}`);
-        console.log(`✅ Pago eliminado exitosamente: ${pagoId}`);
+        // Solo eliminar si no es el mismo pago que ya eliminamos
+        if (pago.id !== servicio.pago_id) {
+          const pagoId = pago.id;
+          console.log(`🔥 Eliminando pago adicional con ID: ${pagoId}`);
+          console.log(`📋 Datos del pago:`, {
+            id: pago.id,
+            servicio_id: (pago as any).servicio_id,
+            monto: (pago as any).monto,
+            metodo_pago: (pago as any).metodo_pago
+          });
+          
+          await deleteDocument(`pagos/${pagoId}`);
+          console.log(`✅ Pago adicional eliminado exitosamente: ${pagoId}`);
+        }
       } catch (error) {
-        console.error(`❌ Error al eliminar pago ${pago.id}:`, error);
+        console.error(`❌ Error al eliminar pago adicional ${pago.id}:`, error);
         throw error; // Re-lanzar el error para que se maneje en el nivel superior
       }
     }

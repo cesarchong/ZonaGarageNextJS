@@ -1105,37 +1105,14 @@ function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBa
     const productos = productosPromos.filter(item => item.tipo === 'producto');
     const promociones = productosPromos.filter(item => item.tipo === 'promocion');
     
-    const servicioObj = {
-      id: crypto.randomUUID(),
-      cliente_id: cliente.id,
-      vehiculo_id: vehiculo.id,
-      tipos_servicio_realizados,
-      precio: totalServicios.toFixed(2),
-      productos: productos,
-      promociones: promociones, // Agregar promociones separadas
-      precio_total: totalFinal.toFixed(2),
-      descuento: descuento.toFixed(2),
-      pagado: true,
-      fecha_servicio: now.toISOString(),
-      fecha: fecha,
-      hora: hora,
-      observaciones: observacionServicio || '',
-      cobros_extra: cobroExtraValor,
-      empleado_id: empleado?.id || null,
-    };
-    
     try {
       const { addDoc, collection, doc, updateDoc } = await import("firebase/firestore");
       const { db } = await import("../lib/firebase");
       
-      // Registrar el servicio y obtener su ID principal de Firestore
-      const servicioRef = await addDoc(collection(db, "servicios"), servicioObj);
-      const servicioFirestoreId = servicioRef.id;
-      
-      // Crear el objeto de pago usando el ID principal del servicio
+      // Crear el objeto de pago primero
       const pagoObj = {
         id: crypto.randomUUID(),
-        servicio_id: servicioFirestoreId, // Usar el ID principal de Firestore
+        servicio_id: '', // Se actualizará después con el ID del servicio
         metodo_pago: metodoPago,
         monto: Number(totalFinal),
         fecha_pago: new Date().toISOString(),
@@ -1144,7 +1121,39 @@ function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBa
         cliente_id: cliente.id,
       };
       
-      await addDoc(collection(db, "pagos"), pagoObj);
+      // Registrar el pago y obtener su ID de Firestore
+      const pagoRef = await addDoc(collection(db, "pagos"), pagoObj);
+      const pagoFirestoreId = pagoRef.id;
+      
+      // Crear el objeto del servicio con la referencia al pago
+      const servicioObj = {
+        id: crypto.randomUUID(),
+        cliente_id: cliente.id,
+        vehiculo_id: vehiculo.id,
+        tipos_servicio_realizados,
+        precio: totalServicios.toFixed(2),
+        productos: productos,
+        promociones: promociones, // Agregar promociones separadas
+        precio_total: totalFinal.toFixed(2),
+        descuento: descuento.toFixed(2),
+        pagado: true,
+        fecha_servicio: now.toISOString(),
+        fecha: fecha,
+        hora: hora,
+        observaciones: observacionServicio || '',
+        cobros_extra: cobroExtraValor,
+        empleado_id: empleado?.id || null,
+        pago_id: pagoFirestoreId, // Guardar el ID del pago
+      };
+      
+      // Registrar el servicio y obtener su ID principal de Firestore
+      const servicioRef = await addDoc(collection(db, "servicios"), servicioObj);
+      const servicioFirestoreId = servicioRef.id;
+      
+      // Actualizar el pago con el ID del servicio
+      await updateDoc(doc(db, "pagos", pagoFirestoreId), {
+        servicio_id: servicioFirestoreId
+      });
       
       // Si el pago es en efectivo, registrarlo en la caja usando el ID principal
       if (metodoPago === "efectivo") {

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Trabajadores } from "@/interfaces/trabajadores.interface"
 import { addDocument, createUser, deleteDocument, getCollection, updateDocument } from "@/lib/firebase"
+import { Timestamp } from "firebase/firestore"
 import { showToast } from "nextjs-toast-notify"
 import { useEffect, useState } from "react"
   // Estado para el dialog de ver detalles
@@ -108,7 +109,7 @@ import { useEffect, useState } from "react"
       setLoading(false)
       return
     }
-    const trabajador: Omit<Trabajadores, "id" | "created_at"> & { horarioDia: any[] } = {
+    const trabajador: Omit<Trabajadores, "id"> & { horarioDia: any[] } = {
       cedula: cedula.trim(),
       nombre: nombre.trim(),
       cargo: "TRABAJADOR",
@@ -121,6 +122,7 @@ import { useEffect, useState } from "react"
       check_in: false,
       check_out: false,
       horarioDia,
+      created_at: editId ? trabajadores.find(t => t.id === editId)?.created_at || Timestamp.now() : Timestamp.now(),
     }
     try {
       if (editId) {
@@ -198,11 +200,41 @@ import { useEffect, useState } from "react"
 
   // Determina el estado de asistencia del trabajador hoy
   const getAttendanceStatus = (trab: Trabajadores) => {
+    // PRIORITARIO: Verificar si hay registros abiertos de cualquier fecha
+    if (Array.isArray(trab.horarioDia)) {
+      const registroAbierto = trab.horarioDia.find((h: any) => 
+        h.entrada && h.entrada.trim() !== '' && 
+        (!h.salida || h.salida.trim() === '')
+      )
+      if (registroAbierto) {
+        console.log('Registro abierto encontrado:', registroAbierto)
+        return 'working'
+      }
+    }
+    
+    // Si el trabajador tiene check_in activo globalmente, también mostrar check-out
+    if (trab.check_in === true && trab.check_out !== true) {
+      console.log('Check-in activo:', trab.check_in, 'Check-out:', trab.check_out)
+      return 'working'
+    }
+    
+    // Verificar registros del día actual
     const today = getToday()
-    const dia = Array.isArray(trab.horarioDia) ? trab.horarioDia.find((h: any) => h.fecha === today) : undefined
-    if (!dia) return 'absent'
-    if (dia.entrada && !dia.salida) return 'working'
-    if (dia.entrada && dia.salida) return 'completed'
+    const diasHoy = Array.isArray(trab.horarioDia) ? 
+      trab.horarioDia.filter((h: any) => h.fecha === today) : []
+    
+    // Si no hay registros para hoy, puede hacer check-in
+    if (diasHoy.length === 0) {
+      return 'absent'
+    }
+    
+    // Si hay registros del día pero todos cerrados, puede hacer otro check-in
+    const todosCompletos = diasHoy.every((h: any) => h.entrada && h.salida && h.salida.trim() !== '')
+    if (todosCompletos) {
+      return 'can_checkin'
+    }
+    
+    // Por defecto, puede hacer check-in
     return 'absent'
   }
 
@@ -211,16 +243,17 @@ import { useEffect, useState } from "react"
     const today = getToday();
     const now = getCurrentTime();
     let horarioDia = Array.isArray(trab.horarioDia) ? [...trab.horarioDia] : [];
-    if (horarioDia.some((h: any) => h.fecha === today && h.entrada)) {
-      showToast.error(`El trabajador ya tiene un check-in hoy.`);
+    
+    // Verificar si ya hay un registro abierto (entrada sin salida) para hoy
+    const registroAbierto = horarioDia.find((h: any) => h.fecha === today && h.entrada && !h.salida)
+    if (registroAbierto) {
+      showToast.error(`El trabajador ya tiene un check-in abierto hoy. Debe hacer check-out primero.`);
       return;
     }
-    const idx = horarioDia.findIndex((h: any) => h.fecha === today);
-    if (idx >= 0) {
-      horarioDia[idx] = { ...horarioDia[idx], entrada: now };
-    } else {
-      horarioDia.push({ fecha: today, entrada: now, salida: '' });
-    }
+    
+    // Agregar nuevo registro de entrada
+    horarioDia.push({ fecha: today, entrada: now, salida: '' });
+    
     await updateDocument(`trabajadores/${trab.id}`, { ...trab, horarioDia, check_in: true, check_out: false });
     showToast.success(`Entrada registrada para ${trab.nombre} a las ${now}.`);
     fetchTrabajadores();
@@ -231,14 +264,26 @@ import { useEffect, useState } from "react"
     const today = getToday();
     const now = getCurrentTime();
     let horarioDia = Array.isArray(trab.horarioDia) ? [...trab.horarioDia] : [];
-    const idx = horarioDia.findIndex((h: any) => h.fecha === today);
-    if (idx >= 0 && horarioDia[idx].entrada && !horarioDia[idx].salida) {
-      horarioDia[idx] = { ...horarioDia[idx], salida: now };
-      await updateDocument(`trabajadores/${trab.id}`, { ...trab, horarioDia, check_in: false, check_out: true });
+    
+    // Buscar cualquier registro abierto (entrada sin salida) de cualquier fecha
+    const registroAbiertoIdx = horarioDia.findIndex((h: any) => h.entrada && !h.salida)
+    
+    if (registroAbiertoIdx >= 0) {
+      horarioDia[registroAbiertoIdx] = { ...horarioDia[registroAbiertoIdx], salida: now };
+      
+      // Verificar si quedan registros abiertos (de cualquier fecha)
+      const hayRegistrosAbiertos = horarioDia.some((h: any) => h.entrada && !h.salida)
+      
+      await updateDocument(`trabajadores/${trab.id}`, { 
+        ...trab, 
+        horarioDia, 
+        check_in: hayRegistrosAbiertos, 
+        check_out: !hayRegistrosAbiertos 
+      });
       showToast.success(`Salida registrada para ${trab.nombre} a las ${now}.`);
       fetchTrabajadores();
     } else {
-      showToast.error(`Primero debe registrar la entrada.`);
+      showToast.error(`No hay un check-in abierto para registrar la salida.`);
     }
   }
 
@@ -323,7 +368,7 @@ import { useEffect, useState } from "react"
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1 min-w-[110px]">
-                            {attendance === 'absent' && (
+                            {(attendance === 'absent' || attendance === 'can_checkin') && (
                               <AlertDialog open={confirmDialog.open && confirmDialog.trabajador?.id === trab.id && confirmDialog.type === 'in'} onOpenChange={open => setConfirmDialog(open ? { open: true, type: 'in', trabajador: trab } : { open: false, type: null, trabajador: null })}>
                                 <AlertDialogTrigger asChild>
                                   <Button onClick={() => setConfirmDialog({ open: true, type: 'in', trabajador: trab })} variant="default" size="sm" className="bg-green-600 hover:bg-green-700">
@@ -364,11 +409,6 @@ import { useEffect, useState } from "react"
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
                               </AlertDialog>
-                            )}
-                            {attendance === 'completed' && (
-                              <span className="text-green-600 text-xs font-medium">
-                                <i className="fas fa-check mr-1"></i>Completo
-                              </span>
                             )}
                           </div>
                         </TableCell>

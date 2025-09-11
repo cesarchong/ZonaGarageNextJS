@@ -10,22 +10,22 @@ import { getStorage, uploadString, getDownloadURL, ref } from "firebase/storage"
 // Your web app's Firebase configuration
 const firebaseConfig = {
       //TODO API DE PRODUCCION
-    apiKey: "AIzaSyCKDAAtolpd03WEtX2pBLqRjN5mrY_q5K4",
-  authDomain: "zonagaraje-41c74.firebaseapp.com",
-  projectId: "zonagaraje-41c74",
-  storageBucket: "zonagaraje-41c74.firebasestorage.app",
-  messagingSenderId: "288279094036",
-  appId: "1:288279094036:web:2ad1c3f4c98424db545801",
-  measurementId: "G-F13163XZZM"      
+//     apiKey: "AIzaSyCKDAAtolpd03WEtX2pBLqRjN5mrY_q5K4",
+//   authDomain: "zonagaraje-41c74.firebaseapp.com",
+//   projectId: "zonagaraje-41c74",
+//   storageBucket: "zonagaraje-41c74.firebasestorage.app",
+//   messagingSenderId: "288279094036",
+//   appId: "1:288279094036:web:2ad1c3f4c98424db545801",
+//   measurementId: "G-F13163XZZM"      
   
   //TODO API DE DESARROLLO
-//     apiKey: "AIzaSyDimjZnErbNsJiZFYw-MlhVeZSbyMTJTvs",
-//   authDomain: "inventario-9e8d6.firebaseapp.com",
-//   projectId: "inventario-9e8d6",
-//   storageBucket: "inventario-9e8d6.firebasestorage.app",
-//   messagingSenderId: "852902124288",
-//   appId: "1:852902124288:web:18d8d9dabe04f0504fb1e5",
-//   measurementId: "G-GKW8SRGH30"
+    apiKey: "AIzaSyDimjZnErbNsJiZFYw-MlhVeZSbyMTJTvs",
+  authDomain: "inventario-9e8d6.firebaseapp.com",
+  projectId: "inventario-9e8d6",
+  storageBucket: "inventario-9e8d6.firebasestorage.app",
+  messagingSenderId: "852902124288",
+  appId: "1:852902124288:web:18d8d9dabe04f0504fb1e5",
+  measurementId: "G-GKW8SRGH30"
 };
 
 // Initialize Firebase

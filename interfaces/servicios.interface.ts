@@ -20,4 +20,5 @@ export interface Servicios {
     observaciones: string;
     cobros_extra?: number;
     empleado_id?: string;
+    pago_id: string;
 }
