@@ -1571,6 +1571,7 @@ function ConfirmarServicioSection({ cliente, vehiculo, servicios, empleado, onBa
                   <SelectItem value="efectivo">Efectivo</SelectItem>
                   <SelectItem value="tarjeta">Tarjeta</SelectItem>
                   <SelectItem value="transferencia">Transferencia</SelectItem>
+                  <SelectItem value="pagomovil">Pago Móvil</SelectItem>
                   <SelectItem value="zelle">Zelle</SelectItem>
                   <SelectItem value="otro">Otro</SelectItem>
                 </SelectContent>
@@ -2085,6 +2086,7 @@ function ProductSaleSection({ onBack, onComplete }: { onBack: () => void, onComp
                 <SelectItem value="efectivo">Efectivo</SelectItem>
                 <SelectItem value="tarjeta">Tarjeta</SelectItem>
                 <SelectItem value="transferencia">Transferencia</SelectItem>
+                <SelectItem value="pagomovil">Pago Móvil</SelectItem>
                 <SelectItem value="zelle">Zelle</SelectItem>
                 <SelectItem value="otro">Otro</SelectItem>
               </SelectContent>

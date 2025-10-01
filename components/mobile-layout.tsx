@@ -252,18 +252,17 @@ export default function MobileLayout({ currentSection, setCurrentSection, onLogo
                     <span>Sistema de Lealtad</span>
                   </button>
                 </li>
+                {/* Reportes disponible para todos */}
+                <li>
+                  <button
+                    className={`mobile-sidebar-button ${currentSection === "reports" ? "active" : ""}`}
+                    onClick={() => handleSectionClick("reports")}
+                  >
+                    <i className="fas fa-chart-bar"></i>
+                    <span>Reportes</span>
+                  </button>
+                </li>
                 {/* Opciones solo para administradores */}
-                {isAdmin && (
-                  <li>
-                    <button
-                      className={`mobile-sidebar-button ${currentSection === "reports" ? "active" : ""}`}
-                      onClick={() => handleSectionClick("reports")}
-                    >
-                      <i className="fas fa-chart-bar"></i>
-                      <span>Reportes</span>
-                    </button>
-                  </li>
-                )}
                 {isAdmin && (
                   <li>
                     <button

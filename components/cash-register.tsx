@@ -200,6 +200,7 @@ export default function CashRegister() {
           case 'pago_movil':
           case 'pago móvil':
           case 'pago movil':
+          case 'pagomovil':
             payments.mobile += monto
             break
           case 'zelle':
@@ -226,10 +227,68 @@ export default function CashRegister() {
 
   const loadRecentMovements = async () => {
     try {
+      // Obtener movimientos de caja
       const movimientos = await getCollection("movimientos_caja") as CashMovement[]
-      const recent = movimientos
+      
+      // Obtener todos los pagos del día
+      const today = new Date()
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+      
+      const pagos = await getCollection("pagos") as Pagos[]
+      const todayPayments = pagos.filter(pago => {
+        if (!pago.fecha_pago) return false
+        const paymentDate = new Date(pago.fecha_pago)
+        return paymentDate >= todayStart && paymentDate < todayEnd
+      })
+      
+      // Obtener clientes para mostrar nombres
+      const clientes = await getCollection("clientes") as any[]
+      const clientesMap = new Map(clientes.map(c => [c.id, c.nombre]))
+      
+      // Convertir pagos a formato de movimientos con descripción detallada
+      const paymentMovements: CashMovement[] = todayPayments.map(pago => {
+        const clienteNombre = clientesMap.get(pago.cliente_id) || "Cliente"
+        const metodoPago = pago.metodo_pago || "efectivo"
+        
+        // Formatear el nombre del método de pago
+        let metodoPagoFormateado = metodoPago
+        const metodoLower = metodoPago.toLowerCase()
+        if (metodoLower === 'pagomovil' || metodoLower === 'pago_movil' || metodoLower === 'pago movil' || metodoLower === 'pago móvil') {
+          metodoPagoFormateado = 'Pago Móvil'
+        } else if (metodoLower === 'efectivo') {
+          metodoPagoFormateado = 'Efectivo'
+        } else if (metodoLower === 'tarjeta' || metodoLower.includes('tarjeta')) {
+          metodoPagoFormateado = 'Tarjeta'
+        } else if (metodoLower === 'transferencia' || metodoLower.includes('transferencia')) {
+          metodoPagoFormateado = 'Transferencia'
+        } else if (metodoLower === 'zelle') {
+          metodoPagoFormateado = 'Zelle'
+        } else if (metodoLower === 'binance' || metodoLower === 'criptomoneda') {
+          metodoPagoFormateado = 'Binance'
+        }
+        
+        return {
+          id: pago.id,
+          tipo: "pago",
+          monto: pago.monto,
+          descripcion: `Pago en ${metodoPagoFormateado} - Servicio para ${clienteNombre}`,
+          id_caja: currentCaja?.id || "",
+          fecha_hora: pago.fecha_pago,
+          fecha_creacion: pago.fecha_pago,
+          metodo_pago: pago.metodo_pago,
+          id_relacionado: pago.servicio_id
+        }
+      })
+      
+      // Combinar movimientos de caja y pagos
+      const allMovements = [...movimientos, ...paymentMovements]
+      
+      // Ordenar por fecha y tomar los 15 más recientes
+      const recent = allMovements
         .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())
-        .slice(0, 10)
+        .slice(0, 15)
+      
       setMovements(recent)
     } catch (error) {
       console.error("Error loading recent movements:", error)
@@ -315,6 +374,7 @@ export default function CashRegister() {
         case 'pago_movil':
         case 'pago móvil':
         case 'pago movil':
+        case 'pagomovil':
           updatedPayments.mobile = Math.max(0, updatedPayments.mobile - serviceAmount)
           break
         case 'zelle':
@@ -803,40 +863,76 @@ export default function CashRegister() {
         <CardContent>
           {movements.length > 0 ? (
             <div className="space-y-3">
-              {movements.map((movement) => (
-                <div key={movement.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center">                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
-                    movement.tipo === "abrir" ? "bg-green-100 text-green-600" :
-                    movement.tipo === "cerrar" ? "bg-red-100 text-red-600" :
-                    movement.tipo === "deposito" || movement.tipo === "pago" ? "bg-blue-100 text-blue-600" :
-                    "bg-orange-100 text-orange-600"
-                  }`}>
-                    <i className={`fas ${
-                      movement.tipo === "abrir" ? "fa-unlock" :
-                      movement.tipo === "cerrar" ? "fa-lock" :
-                      movement.tipo === "deposito" || movement.tipo === "pago" ? "fa-plus" :
-                      "fa-minus"
-                    }`}></i>
+              {movements.map((movement) => {
+                // Determinar el icono y color según el método de pago
+                const getPaymentIcon = (metodo: string | undefined) => {
+                  if (!metodo) return "fa-dollar-sign"
+                  const metodolower = metodo.toLowerCase()
+                  if (metodolower.includes("efectivo")) return "fa-money-bill-wave"
+                  if (metodolower.includes("tarjeta")) return "fa-credit-card"
+                  if (metodolower.includes("transferencia")) return "fa-exchange-alt"
+                  if (metodolower.includes("movil") || metodolower.includes("móvil")) return "fa-mobile-alt"
+                  if (metodolower.includes("zelle")) return "fa-dollar-sign"
+                  if (metodolower.includes("binance")) return "fa-bitcoin"
+                  return "fa-dollar-sign"
+                }
+                
+                const getPaymentColor = (metodo: string | undefined) => {
+                  if (!metodo) return "bg-gray-100 text-gray-600"
+                  const metodolower = metodo.toLowerCase()
+                  if (metodolower.includes("efectivo")) return "bg-green-100 text-green-600"
+                  if (metodolower.includes("tarjeta")) return "bg-blue-100 text-blue-600"
+                  if (metodolower.includes("transferencia")) return "bg-purple-100 text-purple-600"
+                  if (metodolower.includes("movil") || metodolower.includes("móvil")) return "bg-pink-100 text-pink-600"
+                  if (metodolower.includes("zelle")) return "bg-indigo-100 text-indigo-600"
+                  if (metodolower.includes("binance")) return "bg-orange-100 text-orange-600"
+                  return "bg-gray-100 text-gray-600"
+                }
+                
+                return (
+                  <div key={movement.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center flex-1">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
+                        movement.tipo === "pago" 
+                          ? getPaymentColor(movement.metodo_pago)
+                          : movement.tipo === "abrir" ? "bg-green-100 text-green-600" :
+                            movement.tipo === "cerrar" ? "bg-red-100 text-red-600" :
+                            movement.tipo === "deposito" ? "bg-blue-100 text-blue-600" :
+                            "bg-orange-100 text-orange-600"
+                      }`}>
+                        <i className={`fas ${
+                          movement.tipo === "pago" 
+                            ? getPaymentIcon(movement.metodo_pago)
+                            : movement.tipo === "abrir" ? "fa-unlock" :
+                              movement.tipo === "cerrar" ? "fa-lock" :
+                              movement.tipo === "deposito" ? "fa-plus" :
+                              "fa-minus"
+                        }`}></i>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900">{movement.descripcion}</p>
+                        <p className="text-sm text-gray-600">{formatDateTime(movement.fecha_hora)}</p>
+                        {movement.metodo_pago && (
+                          <div className="flex items-center mt-1">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-800">
+                              {movement.metodo_pago}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right ml-4">
+                      <p className={`text-lg font-bold ${
+                        movement.tipo === "deposito" || movement.tipo === "pago" || movement.tipo === "abrir" 
+                          ? "text-green-600" 
+                          : "text-red-600"
+                      }`}>
+                        {movement.tipo === "retiro" ? "-" : "+"}{formatCurrency(movement.monto)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">{movement.descripcion}</p>
-                    <p className="text-sm text-gray-600">{formatDateTime(movement.fecha_hora)}</p>
-                    {movement.metodo_pago && (
-                      <p className="text-xs text-gray-500">Método: {movement.metodo_pago}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={`font-bold ${
-                    movement.tipo === "deposito" || movement.tipo === "pago" || movement.tipo === "abrir" 
-                      ? "text-green-600" 
-                      : "text-red-600"
-                  }`}>
-                    {movement.tipo === "retiro" ? "-" : "+"}{formatCurrency(movement.monto)}
-                  </p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
